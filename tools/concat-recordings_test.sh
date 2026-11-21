@@ -29,9 +29,15 @@ secs() { # secs <file>: length in whole seconds, rounded
 	ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" | awk '{printf "%d", $1 + 0.5}'
 }
 # the lines "<n> clips -> <path>" of a run, as "<n>:<file name>" joined by spaces
-# (G= sets GAP for the run; 1 when not given)
+# (G= sets GAP for the run: 1 when not given, G=default leaves GAP unset).
+# The output goes through a file so that a run that fails after printing its
+# lines is not taken for a good one.
 run() {
-	GAP=${G:-1} sh "$HERE/concat-recordings.sh" "$@" | sed -n 's|^\([0-9]*\) clips -> .*/\(.*\)$|\1:\2|p' | tr '\n' ' '
+	(
+		if [ "${G:-1}" = default ]; then unset GAP; else export GAP="${G:-1}"; fi
+		sh "$HERE/concat-recordings.sh" "$@" >"$T/run.out"
+	) || fail "exit $? from: concat-recordings.sh $*"
+	sed -n 's|^\([0-9]*\) clips -> .*/\(.*\)$|\1:\2|p' "$T/run.out" | tr '\n' ' '
 }
 
 # two recordings on one day; the second runs over midnight; a third starts on
@@ -74,8 +80,8 @@ got=$(cd "$R" && run 2026 "$T/out-rel")
 # GAP: the default splits these the same way; one larger than every pause
 # joins everything; not a number is refused
 mkdir "$T/out-gap"
-got=$(sh "$HERE/concat-recordings.sh" "$R" "$T/out-gap" | grep -c ' clips -> ')
-[ "$got" -eq 3 ] || fail "default GAP: $got recordings"
+got=$(G=default run "$R" "$T/out-gap")
+[ "$got" = "$want" ] || fail "default GAP: $got"
 got=$(G=100000 run "$R" "$T/out-gap")
 [ "$got" = "7:rec-2026-11-20_18-00-00.mp4 " ] || fail "GAP=100000: $got"
 for g in abc 1m 1.2.3; do
