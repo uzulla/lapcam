@@ -5,7 +5,7 @@
 lapcam のファームウェアには、録画に必要なもの (Thingino の出荷ファームで壊れていた agent adapter の修正、本体ボタンの
 ダブルクリックで開始・停止する `rec-button`、録画中に正面の赤 LED を点ける `rec-led`、保存先 SD の `recordings/`) が
 入っていて、操作は lapcam の Camera タブ (Record / Stop recording) と Recordings タブ (一覧・再生・ダウンロード・削除・設定)
-([lapcam.md](lapcam.md))。この文書は仕組みと実測、PC で分割ファイルを 1 本につなぐ `tools/concat-recordings.sh`。
+([lapcam.md](lapcam.md))。この文書は仕組みと実測、PC で分割ファイルを録画 1 回ごとに 1 本につなぐ `tools/concat-recordings.sh`。
 
 ## 仕組み
 
@@ -108,8 +108,17 @@ scp -O -r root@<camera-ip>:/mnt/mmcblk0p1/recordings ~/Downloads/               
 ## 1 本につなぐ (`tools/concat-recordings.sh`)
 
 ```sh
-tools/concat-recordings.sh ~/Downloads/recordings ~/Downloads/rec-all.mp4   # PC に ffmpeg が必要 (brew install ffmpeg)
+tools/concat-recordings.sh ~/Downloads/recordings ~/Downloads                # 録画 1 回ごとに rec-2026-11-20_18-25-30.mp4 のような名前で出す
+tools/concat-recordings.sh ~/Downloads/recordings ~/Downloads/rec-all.mp4   # 名前を決める。録画が 2 回以上なら rec-all-1.mp4, rec-all-2.mp4, ...
 ```
+
+PC に ffmpeg が必要 (`brew install ffmpeg`)。出力は録画 1 回につき 1 本: ファイル名の時刻 (`%H-%M-%S.mp4`) が、
+前のファイルの長さより 3 秒を超えて先に飛んでいたら (録画を止めて、後でまた始めた)、そこで次の出力に分ける。
+日付をまたいで続いた録画は 1 本のまま。短い中断をつなげたい時は `GAP=<秒>` で許す長さを変える
+(例: `GAP=60 tools/concat-recordings.sh ...`)。`%H-%M-%S.mp4` でない名前のファイルは分けない。
+入力フォルダの下の `rec-*.mp4` は読まない (出力先を入力フォルダにした時の、このスクリプト自身の出力)。
+同じ名前になる録画が 2 つあれば、後のほうに `-2` を付ける。
+テスト: `sh tools/concat-recordings_test.sh` (ffmpeg で作った 2 秒のファイルで、分け方、`GAP`、出力の名前)。
 
 再エンコードはしない。`ffmpeg -f concat -c copy` をそのまま使ってはいけない理由:
 
