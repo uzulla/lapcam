@@ -31,8 +31,9 @@ Wyze Cam v3 の Setup ボタンは、Thingino では起動した後もいつで�
 
 - 読み上げる IP は、デフォルトルートのインターフェース (普通は `wlan0`) のアドレス
 - 音声は **thingino.com の読み上げサービス** (`https://thingino.com/say2`) で作る (`/usr/sbin/tell`)。
-  - **カメラがインターネットに繋がっている必要がある** (`1.1.1.1` への ping で判定)。繋がっていない時は IP を読み上げず、
-    設定用ポータルについての案内の音声が流れる
+  - **カメラがインターネットに繋がっている必要がある** (`1.1.1.1` への ping で判定)。繋がっていない時は IP を読み上げられず、
+    "configuration portal mode" の音声が流れる。判定は ping 1 発 (待ち 1 秒) なので、繋がっていても配信中などに 1 発落ちると
+    この音声が鳴り、続けて IP も読み上げる (Thingino の `tell` の作り。カメラが AP になったわけではない)
   - 読み上げる文 (`IP address is <LAN の IP>`) が thingino.com に送られる
 - 音は prudynt 経由で鳴らす (`/run/prudynt/audio_out`)。prudynt が止まっている時は鳴らない (動作自体は実行される)
 - 読み上げと再生の仕組み、音声を先に作って置いておく方法は [speaker.md](speaker.md)
