@@ -3,10 +3,38 @@
 # Install to /etc/init.d/S93youtube-relay (chmod +x).
 # Enable/disable with: service enable youtube-relay / service disable youtube-relay
 # (or set "enabled": false in /etc/youtube-relay.json)
+#
+# "autostart": false in the relay's config (the SD card's youtube-relay.json,
+# else /etc/youtube-relay.json) also keeps it from starting AT BOOT. lapcam's
+# "Start streaming when the camera boots" writes it next to the executable bit
+# that "service disable" clears: the bit is kept in the flash's data partition,
+# and when that partition is formatted (docs/sdcard.md) the script from the
+# rootfs is executable again - the camera would go live at the next boot
+# although the user had turned that off. The card's file survives.
+# Only the start that the boot sequence makes looks at it (booting): a start or
+# restart by hand, by "service", by lapcam's Go live or by the button works as
+# before. The card may not be mounted yet when this runs at boot, so the
+# supervisor is told as well ($BOOT_MARK): it checks the first config it finds.
 
 DAEMON="youtube-relay"
 DAEMON_PATH="/usr/sbin/youtube-relay"
 PIDFILE="/run/$DAEMON.pid"
+
+BOOT_MARK="/run/$DAEMON.boot" # this run of the supervisor was started by the boot sequence
+
+# booting - is this "start" the boot sequence's (rcS runs every S* script),
+# not one asked for later? rcS is then among our ancestors.
+booting() {
+	p=$PPID
+	while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+		case "$(tr '\000' ' ' <"/proc/$p/cmdline" 2>/dev/null)" in
+			*"sh /etc/init.d/rcS ") return 0 ;;
+		esac
+		# /proc/<pid>/stat: pid (comm) state ppid ...; comm may hold spaces
+		p=$(sed 's/^.*) [A-Za-z] \([0-9]*\) .*$/\1/' "/proc/$p/stat" 2>/dev/null)
+	done
+	return 1
+}
 
 running() {
 	[ -f "$PIDFILE" ] || return 1
@@ -21,6 +49,23 @@ start() {
 	if [ -f /run/portal_mode ]; then
 		echo "SKIP (portal mode)"
 		exit 0
+	fi
+	if booting; then
+		for c in /mnt/mmcblk0p1/youtube-relay.json /etc/youtube-relay.json; do
+			[ -f "$c" ] || continue
+			if [ "$(jct "$c" get autostart 2>/dev/null)" = "false" ]; then
+				echo "SKIP (\"autostart\": false in $c: not at boot)"
+				exit 0
+			fi
+			break # the first file that exists is the one the relay reads
+		done
+		# no config yet (the card mounts late, or comes later): the
+		# supervisor makes the same check on the first one it finds
+		: >"$BOOT_MARK"
+	else
+		# asked for by someone: also for a supervisor that the boot started
+		# and that is still waiting for a config
+		rm -f "$BOOT_MARK"
 	fi
 	# No config check here: the supervisor stands by until a usable config
 	# appears on the SD card (/mnt/mmcblk0p1) or in /etc, so an SD card

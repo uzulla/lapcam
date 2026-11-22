@@ -159,7 +159,7 @@ func (p *statusPoller) collect() status {
 	st.Stream.TxKbps = p.txRate(now)
 
 	st.Relay.Running = relayRunning()
-	st.Relay.Autostart = relayAutostart()
+	st.Relay.Autostart = p.relay.autostart()
 	st.Relay.Configured = p.relay.configured()
 	pid, el := relayFfmpeg(uptime())
 	st.Relay.FfmpegRunning = pid > 0
