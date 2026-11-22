@@ -68,8 +68,8 @@ supervisor は **一時的な場所が常設を上書きする**順で探す:
 service stop youtube-relay      # 配信停止 (supervisor ごと止まる)
 service start youtube-relay     # 配信開始
 service disable youtube-relay   # boot 時の自動開始を無効化 (init スクリプトの実行ビット)
-                                # lapcam の Stream タブで切ると、加えて設定ファイルに "autostart": false を書く:
-                                # その間は `start` も始めない (YOUTUBE_RELAY_MANUAL=1 を付ければ始める)
+                                # lapcam の Stream タブで切ると、加えて設定ファイルに "autostart": false を書く
+                                # (起動時の開始だけを止める印。start / restart は今までどおり始める: sdcard.md)
 service enable youtube-relay    # 有効化
 /etc/init.d/S93youtube-relay status
 logread | grep youtube-relay | tail -20

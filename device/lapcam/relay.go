@@ -21,8 +21,10 @@ import (
 	"time"
 )
 
+// relayInit - the relay's init script; a variable for the tests
+var relayInit = "/etc/init.d/S93youtube-relay"
+
 const (
-	relayInit      = "/etc/init.d/S93youtube-relay"
 	relayPidfile   = "/run/youtube-relay.pid"
 	relayEtcCfg    = "/etc/youtube-relay.json"
 	relayCfgName   = "youtube-relay.json"
@@ -272,8 +274,9 @@ func runCmdTimeout(timeout time.Duration, name string, args ...string) (string, 
 // partition can be formatted behind the user's back (docs/sdcard.md), and the
 // script from the rootfs is executable again. So the choice is also written
 // into the relay's config as "autostart" (on the SD card, like the stream
-// key), and S93youtube-relay does not start at boot when it says false. A
-// start asked for here must still work then: relayManualEnv tells the script.
+// key), and neither S93youtube-relay nor the supervisor starts the stream at
+// boot when it says false. A start asked for here is not a boot start and
+// works as before.
 func (rl *relay) op(op string) (string, error) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -282,29 +285,54 @@ func (rl *relay) op(op string) (string, error) {
 		// S93youtube-relay's stop waits up to 45 s for the supervisor, then
 		// kills it: give the whole sequence room, or a restart cut short by
 		// our timeout would leave the relay stopped
-		return runCmdTimeout(relayOpTimeout, "env", relayManualEnv, "sh", relayInit, op)
+		return runCmdTimeout(relayOpTimeout, "sh", relayInit, op)
 	case "enable", "disable":
-		// the config first: if it cannot be written, nothing has changed yet
-		if err := setAutostartFlag(rl.configPath(), op == "enable"); err != nil {
-			return "", fmt.Errorf("could not save the choice in %s: %w", rl.configPath(), err)
-		}
-		return runCmd("service", op, "youtube-relay")
+		return rl.setAutostart(op == "enable")
 	}
 	return "", errBadOp
 }
 
-// relayManualEnv - see op and S93youtube-relay
-const relayManualEnv = "YOUTUBE_RELAY_MANUAL=1"
+// serviceCmd - Thingino's "service enable|disable youtube-relay"; replaceable by tests
+var serviceCmd = func(op string) (string, error) { return runCmd("service", op, "youtube-relay") }
+
+// setAutostart - both places (see op), the config first: a power cut between
+// the two leaves "off" where it counts. A config that cannot be written (no
+// card and a full flash, a read-only card) does not keep the executable bit
+// from being set: the choice then holds until the data partition is lost,
+// as it always did, and the error says so.
+func (rl *relay) setAutostart(on bool) (string, error) {
+	op := "disable"
+	if on {
+		op = "enable"
+	}
+	path := rl.configPath()
+	flagErr := setAutostartFlag(path, on)
+	out, err := serviceCmd(op)
+	if err != nil {
+		return out, err
+	}
+	if flagErr != nil {
+		return out, fmt.Errorf("set on the camera, but not saved in %s (%v): it lasts only until the camera's own settings are lost", path, flagErr)
+	}
+	return out, nil
+}
 
 // autostartFlag - "autostart" in the relay's config: false only when the file
-// says false (a config without the key, or none, leaves it to the init script)
+// says false (a config without the key, or none, leaves it to the init
+// script). The string "false" counts too: the init script reads the value
+// with jct, which prints both the same way.
 func autostartFlag(path string) bool {
 	cfg, err := readJSONFile(path)
 	if err != nil {
 		return true
 	}
-	v, ok := cfg["autostart"].(bool)
-	return !ok || v
+	switch v := cfg["autostart"].(type) {
+	case bool:
+		return v
+	case string:
+		return v != "false"
+	}
+	return true
 }
 
 // setAutostartFlag - write "autostart" into the relay's config, keeping its

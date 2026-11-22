@@ -167,10 +167,12 @@ Web UI から変えた画質の設定など) だけ。
 注意:
 
 - **起動時の配信を切っていた個体は、切ったまま**。lapcam の Stream タブ「Start streaming when the camera boots」は起動スクリプト
-  `S93youtube-relay` の実行ビット (データ領域に保存され、消えると有効に戻る) に加えて、カードの `youtube-relay.json` に
-  `"autostart": false` と書く。`S93youtube-relay` は起動時にそれを見て始めない。lapcam を使わずに ssh から
-  `service disable youtube-relay` だけで切った個体は、カードに印が無いので有効に戻る (焼いた直後と同じ: カードにストリームキーが
-  あれば起動時に配信を始める)
+  `S93youtube-relay` の実行ビット (データ領域に保存され、消えると有効に戻る) に加えて、リレーの設定 (カードの `youtube-relay.json`。
+  カードに無く `/etc/youtube-relay.json` を使っている個体はそちら = データ領域なので、この保護は無い) に `"autostart": false` と書く。
+  **起動時の開始だけ**がそれを見る: `S93youtube-relay` は起動の流れ (rcS) から呼ばれた時に始めず、カードのマウントが遅れて
+  その時点で読めなかった場合は、監視スクリプトが最初に見つけた設定で同じ確認をして配信せずに終わる。起動後の `start` /
+  `restart` (Go live、`service`、ボタン) は今までどおり始める。lapcam を使わずに ssh から `service disable youtube-relay` だけで
+  切った個体は、印が無いので有効に戻る (焼いた直後と同じ: カードにストリームキーがあれば起動時に配信を始める)
 - 起動スクリプトやボタン設定を実機で書き換えたり `service enable / disable` したりすると、そのファイルはデータ領域に写しが
   できて、以後は rootfs の新しい版より優先される。イメージ全体を焼く更新 (`autoupdate-full.bin`、`sysupgrade <イメージ>`) は
   データ領域も書き直すので問題にならないが、rootfs だけを入れ替える更新 (`sysupgrade -r`) では古い写しが残る
