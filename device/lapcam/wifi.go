@@ -550,6 +550,7 @@ func (s *server) handleWifiGet(w http.ResponseWriter, r *http.Request) {
 		"networks": nets,
 		"sd_copy":  exists(filepath.Join(s.sd, wpaSDName)),
 		"ap_mode":  exists("/run/wlan_ap_mode") || exists("/run/portal_mode"),
+		"empty_ok": emptyWifiOK(),
 		"note":     s.getWifiNote(),
 	})
 }
@@ -568,19 +569,25 @@ func (s *server) handleWifiScan(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleWifiSet(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Networks []wifiNet `json:"networks"`
+		Networks *[]wifiNet `json:"networks"`
 	}
 	if err := readJSON(r, &body, 64<<10); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	applied, err := s.wifiSave(body.Networks)
+	// an empty list removes every network: a request without the list at all
+	// (a client's mistake) must not pass for one
+	if body.Networks == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "networks is missing"})
+		return
+	}
+	applied, err := s.wifiSave(*body.Networks)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "applied": applied, "empty": len(body.Networks) == 0,
+		"ok": true, "applied": applied, "empty": len(*body.Networks) == 0,
 		"ap_mode": exists("/run/wlan_ap_mode") || exists("/run/portal_mode"),
 	})
 }

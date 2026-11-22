@@ -66,7 +66,8 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
 - AP から戻る時 (`wifi-ap` が `/run/wlan_ap_mode` を見て向きを決める) は、AP の DHCP / DNS と wpa_supplicant を止めて
   100.64.1.1 を外し、クライアントとして起動し直して DHCP を取り直す (`ifdown -f wlan0` → 起動 → `ifup wlan0`)。
   設定ファイルはもう保存済みのネットワークなので、何も書かない。配信 (`youtube-relay`) はデフォルトルートが戻るのを
-  待って自分で再開する。30 秒待ってつながったかどうかをログに書く。手で向きを決めるなら `wifi-ap ap` / `wifi-ap sta`。
+  待って自分で再開する。カードの `uenv.txt` に `wlan_ssid=` があると、起動時と同じく Wi-Fi の起動処理がその 1 つで
+  保存済みのネットワークを置き換える (ログに警告)。切り替えは同時に 1 つだけで、切り替え中の長押しは何もしない。30 秒待ってつながったかどうかをログに書く。手で向きを決めるなら `wifi-ap ap` / `wifi-ap sta`。
   保存済みのネットワークが 1 つも無い時は戻らず、AP のまま "portal is down" の音で知らせる (Wi-Fi タブで足してから)。
   Thingino の設定ポータル (`/run/portal_mode`: 素の Thingino で Wi-Fi が未設定) の時は何もしない。
   2026-11-22、v2.3.0 の個体 (ATBM6031) で `wifi-ap ap` → 40 秒 → `wifi-ap sta` を ssh から 1 往復させて確認した:
@@ -98,6 +99,8 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
   保存済みの設定ファイルは書き換えない。lapcam は `/etc/init.d/S38wpa_supplicant` にパッチの目印
   (`lapcam-no-wifi-ap`) がある時だけ「全部消す」を受け付ける。v2.3.0 までのファームウェアと素の Thingino では
   今までどおり「1 つは残す」のエラーになる (消すと Thingino の設定用ポータルで起動してしまうため)
+- AP の間に Thingino の `S38wpa_supplicant restart` を直接呼ぶと、AP の DHCP / DNS と `/run/wlan_ap_mode` が残る
+  (設定ファイルにネットワークがあると、スクリプトはクライアントとして止めるため)。AP から出るのはボタンか `wifi-ap sta` で
 - AP で起動した時は配信 (`youtube-relay`) と `beacon` も起動していて、Wi-Fi につながるのを待つ。時計は合わせられないので
   (NTP に届かない)、つながるまでカメラの時計はファームウェアを作った日時から進む
 - 起動時の音は無い (ボタンで AP にした時と違う)。スマホの Wi-Fi 一覧に `lapcam-xxxx` が出る

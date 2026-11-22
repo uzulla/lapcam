@@ -45,7 +45,7 @@
       row.append(name, up, del);
       list.appendChild(row);
     });
-    if (!edit.length) { const p = document.createElement("p"); p.className = "help"; p.textContent = "No networks. Add one below before saving."; list.appendChild(p); }
+    if (!edit.length) { const p = document.createElement("p"); p.className = "help"; p.textContent = data.empty_ok ? "No networks: saved like this, the camera starts as an access point named like it (http://100.64.1.1/)." : "No networks. Add one below before saving."; list.appendChild(p); }
 
     const changed = JSON.stringify(edit) !== JSON.stringify(data.networks);
     const removesCurrent = c.ssid && data.networks.some((n) => n.ssid === c.ssid) && !edit.some((n) => n.ssid === c.ssid);

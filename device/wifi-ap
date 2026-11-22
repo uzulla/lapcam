@@ -43,6 +43,22 @@ fail() {
 
 [ -x "$INIT" ] || { logger -p daemon.err -t wifi-ap "no $INIT"; exit 1; }
 
+# S38wpa_supplicant's stop only sends the signal: a wpa_supplicant still on its
+# way out would make the next start a no-op ("already running"), and the
+# camera would end up with neither Wi-Fi nor access point
+wait_stopped() {
+	i=0
+	while pidof wpa_supplicant >/dev/null && [ $i -lt 10 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	if pidof wpa_supplicant >/dev/null; then
+		log "wpa_supplicant did not stop in 10 s; killing it"
+		killall -9 wpa_supplicant 2>/dev/null
+		sleep 1
+	fi
+}
+
 to_ap() {
 	# Thingino's S38wpa_supplicant start runs "wlan configure" from the SD card's
 	# uenv.txt when it holds wlan_ssid= / wlan_pass=: that would replace the
@@ -67,6 +83,7 @@ to_ap() {
 	# its address behind
 	[ -f /var/run/udhcpc.wlan0.pid ] && kill "$(cat /var/run/udhcpc.wlan0.pid)" 2>/dev/null
 	ip addr flush dev wlan0 2>/dev/null
+	wait_stopped
 
 	# S38wpa_supplicant picks the mode from the file: ssid= and psk= present (the
 	# psk= here is a comment: an open network has none, but without the word it
@@ -124,8 +141,15 @@ to_sta() {
 	# without both words S38wpa_supplicant takes the file for "no Wi-Fi saved":
 	# the access point again on the lapcam firmware, Thingino's setup portal on
 	# a plain one
-	if ! grep -q 'ssid=' "$CONF" 2>/dev/null || ! grep -q 'psk=' "$CONF" 2>/dev/null; then
+	# (it counts the words in comments too: then it would start as a client
+	# of nothing, so only real lines count here)
+	if ! grep -v '^[[:space:]]*#' "$CONF" 2>/dev/null | grep -q 'ssid=' || ! grep -v '^[[:space:]]*#' "$CONF" 2>/dev/null | grep -q 'psk='; then
 		fail "$CONF has no network with a password; staying an access point (add one in the Wi-Fi tab first: $URL)"
+	fi
+	# as at boot, the Wi-Fi start-up below then replaces the saved networks
+	# with the card's one
+	if grep -q -E '^wlan_(ssid|pass)=' /mnt/mmcblk0p1/uenv.txt 2>/dev/null; then
+		logger -p daemon.warning -t wifi-ap "/mnt/mmcblk0p1/uenv.txt has wlan_ssid=/wlan_pass=: the Wi-Fi start-up replaces the saved networks in $CONF with that one"
 	fi
 
 	log "leaving the access point for the saved Wi-Fi"
@@ -135,18 +159,7 @@ to_sta() {
 	sh "$INIT" stop >/dev/null 2>&1
 	ip address delete dev wlan0 "$AP_IP/24" 2>/dev/null
 	rm -f /run/wlan_ap_mode
-	# the stop only sends the signal: a wpa_supplicant still on its way out
-	# would make the start below a no-op ("already running")
-	i=0
-	while pidof wpa_supplicant >/dev/null && [ $i -lt 10 ]; do
-		sleep 1
-		i=$((i + 1))
-	done
-	if pidof wpa_supplicant >/dev/null; then
-		log "wpa_supplicant did not stop in 10 s; killing it"
-		killall -9 wpa_supplicant 2>/dev/null
-		sleep 1
-	fi
+	wait_stopped
 	# ifupdown still has wlan0 as up from the boot, but its DHCP client was
 	# stopped when the access point started: forget that, so ifup runs it again
 	ifdown -f wlan0 >/dev/null 2>&1
@@ -176,6 +189,21 @@ if [ -f /run/portal_mode ]; then
 	log "Thingino's setup portal is running, nothing to do"
 	exit 0
 fi
+# one switch at a time: a second hold of the button while the first run still
+# waits would start the opposite switch under it (/run is empty after a boot;
+# a lock whose owner is gone is taken over)
+LOCK=/run/wifi-ap.lock
+if ! mkdir "$LOCK" 2>/dev/null; then
+	owner=$(cat "$LOCK/pid" 2>/dev/null)
+	if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+		log "another switch is still running (pid $owner), nothing to do"
+		exit 0
+	fi
+fi
+echo $$ >"$LOCK/pid"
+trap 'rm -rf "$LOCK"' EXIT
+trap 'exit 1' INT TERM HUP
+
 is_ap=0
 [ -f /run/wlan_ap_mode ] && is_ap=1
 case "${1:-toggle}" in
