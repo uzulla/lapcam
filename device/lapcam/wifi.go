@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -32,6 +33,42 @@ const (
 
 // wpaConf - the config wpa_supplicant runs with (a variable: tests use a temp file)
 var wpaConf = "/etc/wpa_supplicant.conf"
+
+// wifiInit - Thingino's Wi-Fi start-up script. The lapcam firmware patches it
+// (patches/thingino-wifi-portal-ssid.diff, marked with noWifiAPMark): a camera
+// without a saved network then starts as the access point of wifi-ap, where
+// this app's Wi-Fi tab adds one. Without the patch such a camera starts
+// Thingino's setup portal instead, so the last network cannot be removed.
+var wifiInit = "/etc/init.d/S38wpa_supplicant"
+
+const noWifiAPMark = "lapcam-no-wifi-ap"
+
+// wifiAPLock - the lock shared with wifi-ap (a flock on this file), held by it
+// while it switches between the saved Wi-Fi and the access point, and here
+// while the config file is read and rewritten. Going to the access point
+// wifi-ap swaps the file for a moment and puts back the copy it took: a save
+// in between would be lost after it was reported as saved.
+var wifiAPLock = "/run/wifi-ap.flock"
+
+// lockWifi - an error while wifi-ap holds the lock, and also when the lock
+// cannot be taken at all (the file does not open): without it nothing keeps a
+// switch from starting under the save.
+func lockWifi() (unlock func(), err error) {
+	f, err := os.OpenFile(wifiAPLock, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("the Wi-Fi lock cannot be taken, nothing was changed: %v", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, errors.New("the camera is switching between its Wi-Fi and the access point right now; save again in a few seconds")
+	}
+	return func() { _ = f.Close() }, nil // closing drops the lock
+}
+
+func emptyWifiOK() bool {
+	b, err := os.ReadFile(wifiInit)
+	return err == nil && strings.Contains(string(b), noWifiAPMark)
+}
 
 type wifiNet struct {
 	SSID     string   `json:"ssid"`
@@ -341,13 +378,22 @@ func unescapeWPA(s string) string {
 // wifiSave - the new list of networks: write the config file(s) and make
 // wpa_supplicant re-read them. applied is false when the camera is an access
 // point (wifi-ap / portal): the running supplicant holds the AP config then,
-// and a reconfigure would drop the phone; the file waits for the reboot.
+// and a reconfigure would drop the phone; the file waits until wifi-ap
+// leaves the access point (the button again) or the reboot. An empty list
+// (only on a firmware that starts as an access point then, emptyWifiOK) is
+// not applied either: the camera stays where it is until the button or a
+// restart, instead of dropping off the network under the browser.
 func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
-	if len(nets) == 0 {
-		return false, errors.New("at least one network must stay (or the camera falls into portal mode at the next boot)")
+	if len(nets) == 0 && !emptyWifiOK() {
+		return false, errors.New("at least one network must stay: this camera's firmware would start Thingino's setup portal without one (a newer lapcam firmware starts as its own access point instead)")
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
+	unlock, err := lockWifi()
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	s.setWifiNote("") // a new save; the last undo notice is history
 	w, err := parseWPA(wpaConf)
 	if err != nil {
@@ -401,10 +447,22 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 			hasPSK = true
 		}
 	}
-	if !hasPSK {
-		return false, errors.New("at least one network with a WPA2 password must stay: the camera's Wi-Fi start-up treats a list without one as unset and opens the setup portal")
+	if !hasPSK && len(nets) > 0 {
+		return false, errors.New("at least one network with a WPA2 password must stay: the camera's Wi-Fi start-up treats a list without one as unset and joins nothing")
 	}
 	w.nets = nets
+	if len(nets) == 0 {
+		// the Wi-Fi start-up only greps the file for "ssid=" and "psk=": a
+		// comment with both words would pass for a saved network, and the
+		// camera would start as a client of nothing
+		kept := w.header[:0:0]
+		for _, l := range w.header {
+			if !strings.Contains(l, "ssid=") && !strings.Contains(l, "psk=") {
+				kept = append(kept, l)
+			}
+		}
+		w.header = kept
+	}
 	text, err := w.render(psks)
 	if err != nil {
 		return false, err
@@ -413,6 +471,8 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	backupOnce(wpaConf)
 	prevBytes, _ := os.ReadFile(wpaConf)
 	previous := string(prevBytes)
+	s.wifiGen++ // from here the file is this save's: an older save's undo must not write over it
+	gen := s.wifiGen
 	if err := writeText(wpaConf, text, 0o600); err != nil {
 		return false, err
 	}
@@ -424,14 +484,17 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 		}
 	}
 	if exists("/run/wlan_ap_mode") || exists("/run/portal_mode") {
-		return false, nil // the access point stays up; the saved networks come with the reboot
+		return false, nil // the access point stays up; the saved networks come when wifi-ap leaves it, or with the reboot
+	}
+	if len(nets) == 0 {
+		return false, nil
 	}
 	wasUp := wifiStatus().State == "COMPLETED"
 	if out, err := wpaCli("reconfigure"); err != nil || !strings.Contains(out, "OK") {
 		return false, fmt.Errorf("saved, but wpa_supplicant did not reload: %v %s", err, out)
 	}
 	if wasUp && previous != "" {
-		go s.wifiWatch(previous, sd)
+		go s.wifiWatch(previous, sd, gen)
 	}
 	return true, nil
 }
@@ -439,8 +502,9 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 // wifiWatch - after a save that the camera was connected before: if it is
 // not connected again within 30 s (a typo in the only reachable network),
 // the previous file comes back and is loaded again, so the camera is not
-// lost until someone holds the button for the access point
-func (s *server) wifiWatch(previous, sd string) {
+// lost until someone holds the button for the access point. Not when another
+// save came after this one (gen): the file is that save's then.
+func (s *server) wifiWatch(previous, sd string, gen int) {
 	for i := 0; i < 30; i++ {
 		time.Sleep(time.Second)
 		if wifiStatus().State == "COMPLETED" {
@@ -450,6 +514,20 @@ func (s *server) wifiWatch(previous, sd string) {
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
+	if s.wifiGen != gen {
+		return
+	}
+	// wifi-ap is switching (the button): the access point is the way to fix
+	// the networks now, and its swap of the file must not be written into
+	unlock, err := lockWifi()
+	if err != nil {
+		log.Printf("wifi: the last save did not reconnect, but it is not undone: %v", err)
+		return
+	}
+	defer unlock()
+	if exists("/run/wlan_ap_mode") {
+		return // became an access point meanwhile: COMPLETED above was the access point's
+	}
 	_ = writeText(wpaConf, previous, 0o600)
 	if sd != "" && exists(sd) {
 		_ = writeText(sd, previous, 0o644)
@@ -517,6 +595,7 @@ func (s *server) handleWifiGet(w http.ResponseWriter, r *http.Request) {
 		"networks": nets,
 		"sd_copy":  exists(filepath.Join(s.sd, wpaSDName)),
 		"ap_mode":  exists("/run/wlan_ap_mode") || exists("/run/portal_mode"),
+		"empty_ok": emptyWifiOK(),
 		"note":     s.getWifiNote(),
 	})
 }
@@ -535,16 +614,25 @@ func (s *server) handleWifiScan(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleWifiSet(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Networks []wifiNet `json:"networks"`
+		Networks *[]wifiNet `json:"networks"`
 	}
 	if err := readJSON(r, &body, 64<<10); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	applied, err := s.wifiSave(body.Networks)
+	// an empty list removes every network: a request without the list at all
+	// (a client's mistake) must not pass for one
+	if body.Networks == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "networks is missing"})
+		return
+	}
+	applied, err := s.wifiSave(*body.Networks)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "applied": applied})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "applied": applied, "empty": len(*body.Networks) == 0,
+		"ap_mode": exists("/run/wlan_ap_mode") || exists("/run/portal_mode"),
+	})
 }

@@ -66,7 +66,7 @@ network={
   (毎回フラッシュに書かない)。Windows の改行 (CRLF) は取り除く
 - `ctrl_interface=` の行が無ければ Thingino 標準のヘッダを補う。`network={}` ブロックだけ書けばよい
 - `psk=` は `wpa_passphrase <ssid> <password>` で作った 64 桁のハッシュでも可 (平文を置きたくない場合)
-- **`psk=` の無いオープンな Wi-Fi は使えない** (Thingino が「未設定」と判断して設定用ポータルを
+- **`psk=` の無いオープンな Wi-Fi は使えない** (Thingino が「未設定」と判断して、接続せずに設定用の AP を
   起動してしまうため)。その場合ファイルは無視され、ログに理由が出る
 - 適用前の設定は一度だけ `/etc/wpa_supplicant.conf.before-sd` に退避する。最後に適用した内容の md5 を
   `/etc/wpa_supplicant.conf.sd-md5` に置き、これで「内容が変わったか」を判断する (wpa_supplicant 自身が

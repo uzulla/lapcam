@@ -1,7 +1,8 @@
 #!/bin/sh
 # install-wifi-ap.sh - hold the camera's button for 5 seconds to turn it into
 # an open Wi-Fi access point named like the camera (its hostname, lapcam-xxxx
-# or lapcam) until the next reboot (docs/lapcam.md).
+# or lapcam); hold it again (or reboot) to return to the saved Wi-Fi
+# (docs/lapcam.md).
 # Run on the PC:
 #   device/install-wifi-ap.sh root@<camera-ip>
 #
@@ -47,5 +48,5 @@ sleep 0.5
 sleep 1
 [ \"\$(pidof thingino-button | wc -w)\" = 1 ]
 grep -q '^KEY_ENTER TIMED 5 /usr/sbin/wifi-ap' $CONF"
-echo "Done. Hold the button 5 s (a chime sounds), release: the camera becomes the open access point 'lapcam'."
-echo "Then open http://100.64.1.1/ on the phone (with the port from lapcam.args, if any). Reboot to return to the saved Wi-Fi. Log: ssh $CAM 'logread | grep wifi-ap'"
+echo "Done. Hold the button 5 s (a chime sounds), release: the camera becomes the open access point named like it (lapcam-xxxx)."
+echo "Then open http://100.64.1.1/ on the phone (with the port from lapcam.args, if any). Hold the button 5 s again (or reboot) to return to the saved Wi-Fi. Log: ssh $CAM 'logread | grep wifi-ap'"

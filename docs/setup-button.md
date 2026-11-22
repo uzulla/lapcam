@@ -12,7 +12,7 @@ Wyze Cam v3 の Setup ボタンは、Thingino では起動した後もいつで�
 | 0.1 秒未満 | — | 何もしない |
 | **1 回押す** (0.1 〜 1 秒) | 0.1 秒でチャイム (`chime_3`) | 0.7 秒待って、**IP アドレスをスピーカーで読み上げる** (「IP address is 192.168.11.29」) |
 | **ダブルクリック** (0.7 秒以内に 2 回) | 押すたびにチャイム | **SD カードへの録画を開始・停止** (`rec-button`。[recording.md](recording.md)) |
-| **5 〜 20 秒** | 5 秒で別のチャイム (`chime_1`) | **再起動までカメラがパスワード無しの Wi-Fi AP (名前はホスト名 `lapcam-xxxx`) になる** (`wifi-ap`。[lapcam.md](lapcam.md#つながらない時-本体ボタン-5-秒長押しでカメラが-wi-fi-ap-を出す-wifi-ap)) |
+| **5 〜 20 秒** | 5 秒で別のチャイム (`chime_1`) | **カメラがパスワード無しの Wi-Fi AP (名前はホスト名 `lapcam-xxxx`) になる。AP の時は保存済みの Wi-Fi に戻る** (`wifi-ap`。[lapcam.md](lapcam.md#つながらない時-本体ボタン-5-秒長押しでカメラが-wi-fi-ap-を出す-wifi-ap)) |
 | **20 秒以上** | 20 秒で別のチャイム (`chime_2`) | **工場出荷状態に戻す** (`firstboot -f`) |
 
 - 実行されるのは、**離した時点で押していた時間以下の、いちばん長い割り当て 1 つだけ** (5 秒を過ぎてから離せば、
@@ -31,8 +31,9 @@ Wyze Cam v3 の Setup ボタンは、Thingino では起動した後もいつで�
 
 - 読み上げる IP は、デフォルトルートのインターフェース (普通は `wlan0`) のアドレス
 - 音声は **thingino.com の読み上げサービス** (`https://thingino.com/say2`) で作る (`/usr/sbin/tell`)。
-  - **カメラがインターネットに繋がっている必要がある** (`1.1.1.1` への ping で判定)。繋がっていない時は IP を読み上げず、
-    設定用ポータルについての案内の音声が流れる
+  - **カメラがインターネットに繋がっている必要がある** (`1.1.1.1` への ping で判定)。繋がっていない時は IP を読み上げられず、
+    "configuration portal mode" の音声が流れる。判定は ping 1 発 (待ち 1 秒) なので、繋がっていても配信中などに 1 発落ちると
+    この音声が鳴り、続けて IP も読み上げる (Thingino の `tell` の作り。カメラが AP になったわけではない)
   - 読み上げる文 (`IP address is <LAN の IP>`) が thingino.com に送られる
 - 音は prudynt 経由で鳴らす (`/run/prudynt/audio_out`)。prudynt が止まっている時は鳴らない (動作自体は実行される)
 - 読み上げと再生の仕組み、音声を先に作って置いておく方法は [speaker.md](speaker.md)
@@ -46,14 +47,17 @@ Wyze Cam v3 の Setup ボタンは、Thingino では起動した後もいつで�
 0.7 秒待っても次が来なければ 1 回押しとして `tell %ip`。1 秒以上押していた離し方はクリックに数えず、`TIMED` の行に任せる。
 詳細とログの見方は [recording.md](recording.md#本体のボタンのダブルクリックで開始停止-rec-button)。
 
-Wi-Fi が未設定で設定用ポータルになっている時 (`/run/portal_mode`) も、録画、録画中の赤 LED (`rec-led`)、OSD (`osd-config`、`osd-feed`) は
+v2.3.0 までのファームウェアと素の Thingino では、Wi-Fi が未設定だと Thingino の設定用ポータルで起動する (その次の版からは
+[`wifi-ap` と同じ AP](lapcam.md#wi-fi-が-1-つも保存されていない時) で起動し、ポータルにはならない)。
+設定用ポータルになっている時 (`/run/portal_mode`) も、録画、録画中の赤 LED (`rec-led`)、OSD (`osd-config`、`osd-feed`) は
 動く (v2.2.0 まではこの 3 つを止めていた)。ネットワークが要る配信 (`youtube-relay`) と `beacon` は動かない。この状態では時計を合わせられない (NTP に届かない) ので、
 カメラの時計はファームウェアを作った日時から進み、録画のフォルダとファイル名、OSD の時計もその日時になる。
 
 ## Wi-Fi AP (5 秒)
 
 保存した Wi-Fi に繋がらない時のリカバリ用。保存した Wi-Fi は消えず、スマホを `lapcam-xxxx` に繋いで `http://100.64.1.1/`
-を開くと lapcam の Wi-Fi タブで直せる。自動では AP にならず、AP から自動で戻ることもしない (再起動で戻る。ユーザーの決定)。
+を開くと lapcam の Wi-Fi タブで直せる。AP の時にもう一度 5 秒長押しすると、再起動せずに保存済みの Wi-Fi (直した内容) に戻る
+(再起動でも戻る)。自動では AP にならず、AP から自動で戻ることもしない (ユーザーの決定)。ボタンでの往復と音は実機で確認した。
 詳細 (仕組み、`uenv.txt` に Wi-Fi があると AP が立たないこと、失敗時の音) は [lapcam.md](lapcam.md#つながらない時-本体ボタン-5-秒長押しでカメラが-wi-fi-ap-を出す-wifi-ap)。
 
 素の Thingino の既定 `wlan reset` は `/overlay/etc/wpa_supplicant.conf` を消し、再起動後は設定用ポータルになる

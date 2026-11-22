@@ -43,6 +43,7 @@ type server struct {
 
 	wifiMu   sync.Mutex
 	wifiNote string // the last Wi-Fi save was undone (wifi.go)
+	wifiGen  int    // counts the Wi-Fi saves (under relay.mu): an undo is only for the latest one
 }
 
 func main() {

@@ -3,15 +3,16 @@
 Wyze Cam v3 のスピーカーは、Thingino では **prudynt が鳴らす**。シェルからは `play` (音声ファイルを鳴らす) と
 `tell` (文章を読み上げる) で使う。どちらも Thingino に最初から入っているもので、このリポジトリは変えていない。
 lapcam のファームウェアで鳴るのは、本体ボタンの 1 回押しでの IP の読み上げ (`tell %ip`)、ボタンの合図のチャイム、
-ダブルクリックでの録画の開始・停止の音声 ([setup-button.md](setup-button.md))、`wifi-ap` が AP を立てられなかった時の
-"configuration portal is down" ([lapcam.md](lapcam.md))。
+ダブルクリックでの録画の開始・停止の音声 ([setup-button.md](setup-button.md))、`wifi-ap` の切り替えの音声
+(AP が上がった / 立てられなかった、Wi-Fi につながった / つながらない。[lapcam.md](lapcam.md))。
 
 ## 仕組み
 
 ```text
 tell "文章"                 (本体ボタンの 1 回押しは rec-button 経由で tell %ip)
   │ 1. 1.1.1.1 に ping してインターネットに繋がっているか確かめる
-  │    繋がっていない -> 用意された音声 (設定用ポータルの案内) を鳴らして終わる
+  │    ping 1 発 (待ち 1 秒) が通らない -> 用意された音声 "configuration portal mode" を鳴らし、そのまま下へ続く
+  │    (終わらない。配信中などに 1 発落ちただけでも鳴り、その後 IP も読み上げる。2026-11-22 に実機で 10 発中 2 発落ちた)
   │ 2. %ip -> "IP address is <デフォルトルートのインターフェースの IP>"、%time -> date の出力、それ以外はそのまま
   │ 3. curl で https://thingino.com/say2?q=<文章> を取得 -> 音声ファイル (opus) を /tmp に保存
   ▼

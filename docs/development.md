@@ -24,7 +24,7 @@ patches/    Thingino / FFmpeg / prudynt に当てる差分 (prepare.sh が当て
               prudynt-osd-textfile.diff              prudynt にテキスト 3 枠と画像 1 枠の OSD を足す
               prudynt-msgchannel-warning.diff        5 秒ごとの誤報 (msgChannel sink clogged) を止める
               thingino-agent-adapter-record-args.diff  agent の prudynt 用 adapter で record の引数順を直す
-              thingino-wifi-portal-ssid.diff         設定用 AP の名前をホスト名 (lapcam-xxxx) にする
+              thingino-wifi-portal-ssid.diff         Wi-Fi 未保存の時、設定用ポータルではなく wifi-ap と同じ AP で起動する
 tools/      PC で使う道具
               find-camera/      LAN のカメラを mDNS で探す (Go)
               beacon-listen/, beacon-send/   beacon の受信と指令 (Go)

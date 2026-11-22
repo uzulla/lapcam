@@ -17,7 +17,7 @@ SD カードに置く。**ここを変えたらイメージ (かカード) も�
 | `rec-led` / `S96rec-led` | `/usr/sbin/` / `/etc/init.d/` | prudynt が SD に録画している間 (`/run/prudynt/mp4ctl-ch*.active` がある間) 正面の赤 LED を点ける常駐スクリプト | [recording.md](../docs/recording.md) |
 | `S97lapcam` | `/etc/init.d/` | SD の `lapcam` を起動し、その間 uhttpd (Thingino の Web UI) を止める | [lapcam.md](../docs/lapcam.md) |
 | `rec-button` | `/usr/sbin/` | 本体ボタンの押す・離すから、ダブルクリック (SD 録画の開始・停止) と 1 回押し (IP の読み上げ) を判定する。ボタン設定 `/etc/thingino-button.conf` は prepare.sh が Thingino のものを書き換えて作る | [recording.md](../docs/recording.md#本体のボタンのダブルクリックで開始停止-rec-button) |
-| `wifi-ap` | `/usr/sbin/` | 本体ボタン 5 秒長押しで、再起動までカメラをパスワード無しの AP (名前はホスト名) にする | [lapcam.md](../docs/lapcam.md) |
+| `wifi-ap` | `/usr/sbin/` | 本体ボタン 5 秒長押しで、カメラをパスワード無しの AP (名前はホスト名) にする。もう一度の長押し (か再起動) で保存済みの Wi-Fi に戻る | [lapcam.md](../docs/lapcam.md) |
 | `agent-adapter` | `/usr/libexec/agent/adapter.sh` | 録画 (Rec) が使う agent API の prudynt 用バックエンド。Thingino のビルドは何もしない null 版を入れるので、録画引数を直した版 (`patches/thingino-agent-adapter-record-args.diff`) で上書きする | [recording.md](../docs/recording.md#thingino-の-agent-adapter-旧-ui-の-rec-ボタン用) |
 | `lapcam/` | SD カード直下の `lapcam` (と `lapcam.args`) | スマホ向けの Web UI (Go、ポート 80)。プレビュー、配信・録画、OSD、Wi-Fi、パスワード変更。`build.sh` でビルド | [lapcam.md](../docs/lapcam.md) |
 | `osd-feed/` | SD カード直下の `osd-feed` と `osd-feed.json` | メモリ量・時刻・カウンタ・HTTP JSON から OSD テキストを生成し、PNG を画像 OSD 用に変換する常駐プログラム (Go)。`build.sh` でビルド | [osd-feed.md](../docs/osd-feed.md) |

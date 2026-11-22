@@ -15,9 +15,9 @@ INSTALL ON A STOCK WYZE CAM V3 (card made without -u)
      client list show the name, or use the IP) and sign in as root with
      password "root". The app then asks you to set your own (Camera tab,
      "Change password"). Without Wi-Fi settings the camera opens its own
-     network "lapcam-xxxx" (setup page at http://172.16.0.1/); hold the button
-     5 s any time to get an open network of the same name and reach
-     http://100.64.1.1/.
+     open network "lapcam-xxxx": join it, open http://100.64.1.1/, add your
+     Wi-Fi in the Wi-Fi tab and hold the button 5 s to join it. Holding the
+     button 5 s switches between that network and your Wi-Fi at any time.
   The installer renames itself to factory_t31_ZMC6tiIDQN.old when done, so
   the card will not install twice. To go back to Wyze: copy
   WYZE_BACKUP_xxxxxx/combined_backup.bin to the card as autoupdate-full.bin

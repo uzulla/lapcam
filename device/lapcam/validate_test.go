@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -210,9 +211,14 @@ func TestWifiSaveNeedsOnePSKNetwork(t *testing.T) {
 	if err := os.WriteFile(path, []byte("ctrl_interface=/run/wpa_supplicant\nupdate_config=1\n\nnetwork={\n\tssid=\"Home\"\n\tpsk=\"home-pass\"\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := wpaConf
-	wpaConf = path
-	t.Cleanup(func() { wpaConf = old })
+	// a start-up script without the access point mark, whatever this machine has
+	init := filepath.Join(t.TempDir(), "S38wpa_supplicant")
+	if err := os.WriteFile(init, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, oldInit, oldLock := wpaConf, wifiInit, wifiAPLock
+	wpaConf, wifiInit, wifiAPLock = path, init, filepath.Join(t.TempDir(), "wifi-ap.flock")
+	t.Cleanup(func() { wpaConf, wifiInit, wifiAPLock = old, oldInit, oldLock })
 	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
 	if _, err := s.wifiSave([]wifiNet{{SSID: "Cafe", Open: true}}); err == nil || !strings.Contains(err.Error(), "WPA2 password") {
 		t.Fatalf("open-only list accepted: %v", err)
@@ -223,9 +229,116 @@ func TestWifiSaveNeedsOnePSKNetwork(t *testing.T) {
 	if _, err := s.wifiSave([]wifiNet{{SSID: "New", PSK: "short"}}); err == nil {
 		t.Fatal("7-character password accepted")
 	}
+	if _, err := s.wifiSave(nil); err == nil || !strings.Contains(err.Error(), "at least one network must stay") {
+		t.Fatalf("empty list accepted on a firmware without the access point start-up: %v", err)
+	}
 	// the file was not touched by the refused saves
 	b, _ := os.ReadFile(path)
 	if !strings.Contains(string(b), `psk="home-pass"`) || strings.Contains(string(b), "Cafe") {
 		t.Fatalf("file changed by a refused save:\n%s", b)
+	}
+}
+
+// an empty list is saved on a firmware whose Wi-Fi start-up turns "no saved
+// network" into the access point; nothing in the file may look like a network
+func TestWifiSaveEmptyList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "wpa.conf")
+	if err := os.WriteFile(path, []byte("# ssid= and psk= of home\nctrl_interface=/run/wpa_supplicant\nupdate_config=1\n\nnetwork={\n\tssid=\"Home\"\n\tpsk=\"home-pass\"\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	init := filepath.Join(dir, "S38wpa_supplicant")
+	if err := os.WriteFile(init, []byte("#!/bin/sh\n# "+noWifiAPMark+": ...\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldConf, oldInit, oldLock := wpaConf, wifiInit, wifiAPLock
+	wpaConf, wifiInit, wifiAPLock = path, init, filepath.Join(dir, "wifi-ap.flock")
+	t.Cleanup(func() { wpaConf, wifiInit, wifiAPLock = oldConf, oldInit, oldLock })
+	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
+	applied, err := s.wifiSave(nil)
+	if err != nil || applied {
+		t.Fatalf("empty list: applied=%v err=%v", applied, err)
+	}
+	b, _ := os.ReadFile(path)
+	if strings.Contains(string(b), "ssid=") || strings.Contains(string(b), "psk=") || !strings.Contains(string(b), "ctrl_interface=/run/wpa_supplicant") {
+		t.Fatalf("file after an empty save:\n%s", b)
+	}
+	// open-only is still refused: it would never be joined at boot
+	if _, err := s.wifiSave([]wifiNet{{SSID: "Cafe", Open: true}}); err == nil {
+		t.Fatal("open-only list accepted")
+	}
+}
+
+// no save while wifi-ap switches (it holds the flock): its swap of the config
+// file would undo it. And a save holds the same lock, so a switch cannot
+// start in the middle of one.
+func TestWifiSaveRefusedWhileSwitching(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "wpa.conf")
+	conf := "ctrl_interface=/run/wpa_supplicant\n\nnetwork={\n\tssid=\"Home\"\n\tpsk=\"home-pass\"\n}\n"
+	if err := os.WriteFile(path, []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, "wifi-ap.lock")
+	oldConf, oldLock := wpaConf, wifiAPLock
+	wpaConf, wifiAPLock = path, lock
+	t.Cleanup(func() { wpaConf, wifiAPLock = oldConf, oldLock })
+	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
+	nets := []wifiNet{{SSID: "Home"}, {SSID: "Track", PSK: "track-pass"}}
+
+	// "wifi-ap": another open of the file holding the lock
+	held, err := os.OpenFile(lock, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	tryLock := func() bool { return syscall.Flock(int(held.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil }
+	if !tryLock() {
+		t.Fatal("could not take the lock")
+	}
+	if _, err := s.wifiSave(nets); err == nil || !strings.Contains(err.Error(), "switching") {
+		t.Fatalf("saved during a switch: %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != conf {
+		t.Fatalf("file changed by the refused save:\n%s", b)
+	}
+	_ = syscall.Flock(int(held.Fd()), syscall.LOCK_UN)
+
+	// a save in progress keeps a switch out, and lets it in when done
+	unlock, err := lockWifi()
+	if err != nil {
+		t.Fatalf("lock not free after the switch: %v", err)
+	}
+	if tryLock() {
+		t.Fatal("a switch could start during a save")
+	}
+	unlock()
+	if !tryLock() {
+		t.Fatal("lock still held after the save")
+	}
+	_ = syscall.Flock(int(held.Fd()), syscall.LOCK_UN)
+	// released: the save goes through to the file (here there is no
+	// wpa_supplicant to reload, which is a different error)
+	if _, err := s.wifiSave(nets); err != nil && strings.Contains(err.Error(), "switching") {
+		t.Fatalf("refused without a switch: %v", err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "Track") {
+		t.Fatalf("file not written:\n%s", b)
+	}
+
+	// a lock that cannot be taken at all (here: a directory in its place)
+	// refuses the save too, instead of saving unprotected
+	if err := os.WriteFile(path, []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wifiAPLock = filepath.Join(dir, "lockdir")
+	if err := os.Mkdir(wifiAPLock, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.wifiSave(nets); err == nil || !strings.Contains(err.Error(), "lock cannot be taken") {
+		t.Fatalf("saved without the lock: %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != conf {
+		t.Fatalf("file changed by the refused save:\n%s", b)
 	}
 }

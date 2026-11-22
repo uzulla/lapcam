@@ -1,19 +1,29 @@
 #!/bin/sh
-# wifi-ap - turn the camera into an open Wi-Fi access point until the next
-# reboot (docs/lapcam.md). Install to /usr/sbin/wifi-ap (chmod +x); run by the
-# button (hold 5 s, see install-wifi-ap.sh) or by hand.
+# wifi-ap - switch the camera between its saved Wi-Fi and an open Wi-Fi access
+# point of its own, without a reboot (docs/lapcam.md). Install to
+# /usr/sbin/wifi-ap (chmod +x); run by the button (hold 5 s, see
+# install-wifi-ap.sh) or by hand:
+#   wifi-ap        toggle: saved Wi-Fi -> access point, access point -> saved Wi-Fi
+#   wifi-ap ap     access point (nothing to do if it already is one)
+#   wifi-ap sta    saved Wi-Fi (nothing to do if it is not an access point)
 #
 # For the track, when the saved Wi-Fi is not there: the phone joins the
 # network named like the camera (lapcam-xxxx; "lapcam" on a camera set up by hand)
 # (no password: the user's choice, recovery only; whoever is in range can join
 # and see the traffic, so do not type the password near others for long) and
 # opens http://100.64.1.1/ (the app's port, read from lapcam.args) to fix the
-# Wi-Fi settings. Thingino's S38wpa_supplicant already knows how to run an
-# access point (a config with mode=2: 100.64.1.1/24, DHCP, DNS), so this only
-# swaps the config file for the moment it starts, then puts the saved networks
-# back so a reboot returns to normal. The swap touches /etc (flash) twice; the
-# saved file is kept next to it meanwhile, so a power cut in between still
-# leaves it there (wpa_supplicant.conf.station) to copy back by hand.
+# Wi-Fi settings. Holding the button again (or a reboot) takes the camera back
+# to the saved networks, with what was changed meanwhile. Nothing switches by
+# itself: if the saved Wi-Fi does not answer, the camera keeps trying until
+# the button is held again.
+#
+# Thingino's S38wpa_supplicant already knows how to run an access point (a
+# config with mode=2: 100.64.1.1/24, DHCP, DNS), so going there only swaps the
+# config file for the moment it starts, then puts the saved networks back so a
+# reboot returns to normal. The swap touches /etc (flash) twice; the saved
+# file is kept next to it meanwhile, so a power cut in between still leaves it
+# there (wpa_supplicant.conf.station) to copy back by hand. Going back writes
+# nothing: the file already holds the saved networks.
 
 SSID="${WIFI_AP_SSID:-$(hostname)}" # lapcam-xxxx: the camera's name, so two cameras are told apart
 CONF=/etc/wpa_supplicant.conf
@@ -25,41 +35,60 @@ case "$port" in "" | 80) URL="http://$AP_IP/" ;; *) URL="http://$AP_IP:$port/" ;
 
 log() { logger -p daemon.info -t wifi-ap "$1"; }
 
-if [ -f /run/wlan_ap_mode ] || [ -f /run/portal_mode ]; then
-	log "already an access point, nothing to do"
-	exit 0
-fi
-[ -x "$INIT" ] || { logger -p daemon.err -t wifi-ap "no $INIT"; exit 1; }
-
 fail() {
 	logger -p daemon.err -t wifi-ap "$1"
 	play /usr/share/sounds/configurationportalisdown.opus >/dev/null 2>&1
 	exit 1
 }
 
-# Thingino's S38wpa_supplicant start runs "wlan configure" from the SD card's
-# uenv.txt when it holds wlan_ssid= / wlan_pass=: that would replace the
-# access point config written below with a client one, and no AP would come up
-if grep -q -E '^wlan_(ssid|pass)=' /mnt/mmcblk0p1/uenv.txt 2>/dev/null; then
-	fail "/mnt/mmcblk0p1/uenv.txt has wlan_ssid=/wlan_pass=: the Wi-Fi start-up would overwrite the access point config; remove those lines (the saved networks live in $CONF) and try again"
-fi
+[ -x "$INIT" ] || { logger -p daemon.err -t wifi-ap "no $INIT"; exit 1; }
 
-log "switching to access point '$SSID' (open) until the next reboot"
-if grep -q '^[[:space:]]*mode=2' "$CONF" 2>/dev/null; then
-	# a previous run was cut off before it put the saved networks back
-	[ -f "$KEEP" ] || fail "$CONF already holds an access point config and there is no $KEEP to restore; not touching it"
-	log "found the access point config in $CONF from an earlier run; restoring $KEEP first"
-	{ cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync; } || fail "could not restore $CONF from $KEEP (card or overlay full?); nothing changed"
-fi
-cp "$CONF" "$KEEP" || fail "could not save the current config to $KEEP; not switching"
+# S38wpa_supplicant's stop only sends the signal: a wpa_supplicant still on its
+# way out would make the next start a no-op ("already running"), and the
+# camera would end up with neither Wi-Fi nor access point
+wait_stopped() {
+	i=0
+	while pidof wpa_supplicant >/dev/null && [ $i -lt 10 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	if pidof wpa_supplicant >/dev/null; then
+		log "wpa_supplicant did not stop in 10 s; killing it"
+		killall -9 wpa_supplicant 2>/dev/null
+		sleep 1
+	fi
+}
 
-# stop while the config still says "client", so the client-mode teardown runs
-sh "$INIT" stop >/dev/null 2>&1
+to_ap() {
+	# Thingino's S38wpa_supplicant start runs "wlan configure" from the SD card's
+	# uenv.txt when it holds wlan_ssid= / wlan_pass=: that would replace the
+	# access point config written below with a client one, and no AP would come up
+	if grep -q -E '^wlan_(ssid|pass)=' /mnt/mmcblk0p1/uenv.txt 2>/dev/null; then
+		fail "/mnt/mmcblk0p1/uenv.txt has wlan_ssid=/wlan_pass=: the Wi-Fi start-up would overwrite the access point config; remove those lines (the saved networks live in $CONF) and try again"
+	fi
 
-# S38wpa_supplicant picks the mode from the file: ssid= and psk= present (the
-# psk= here is a comment: an open network has none, but without the word it
-# would start the setup portal instead), mode=2 -> access point
-cat >"$CONF" <<EOF
+	log "switching to access point '$SSID' (open) until the button is held again or the next reboot"
+	if grep -q '^[[:space:]]*mode=2' "$CONF" 2>/dev/null; then
+		# a previous run was cut off before it put the saved networks back
+		[ -f "$KEEP" ] || fail "$CONF already holds an access point config and there is no $KEEP to restore; not touching it"
+		log "found the access point config in $CONF from an earlier run; restoring $KEEP first"
+		{ cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync; } || fail "could not restore $CONF from $KEEP (card or overlay full?); nothing changed"
+	fi
+	cp "$CONF" "$KEEP" || fail "could not save the current config to $KEEP; not switching"
+
+	# stop while the config still says "client", so the client-mode teardown runs
+	sh "$INIT" stop >/dev/null 2>&1 9>&-
+	# a file without a saved network counts as "access point" on the lapcam
+	# firmware (it starts as one then): that stop leaves the DHCP client and
+	# its address behind
+	[ -f /var/run/udhcpc.wlan0.pid ] && kill "$(cat /var/run/udhcpc.wlan0.pid)" 2>/dev/null
+	ip addr flush dev wlan0 2>/dev/null
+	wait_stopped
+
+	# S38wpa_supplicant picks the mode from the file: ssid= and psk= present (the
+	# psk= here is a comment: an open network has none, but without the word it
+	# would start the setup portal instead), mode=2 -> access point
+	cat >"$CONF" <<EOF
 # temporary access point written by wifi-ap; the saved networks are restored right after start
 ctrl_interface=/run/wpa_supplicant
 ap_scan=2
@@ -71,29 +100,119 @@ network={
 	key_mgmt=NONE
 }
 EOF
-sh "$INIT" start >/dev/null 2>&1
-# the running wpa_supplicant has its config; the file goes back to the saved
-# networks (atomically), so the next boot is normal. If that fails, say so:
-# the camera would come back as an access point after a reboot
-restored=1
-{ cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync; } || {
-	restored=0
-	logger -p daemon.err -t wifi-ap "could not put the saved networks back into $CONF; copy $KEEP over it by hand before rebooting"
+	sh "$INIT" start >/dev/null 2>&1 9>&-
+	# the running wpa_supplicant has its config; the file goes back to the saved
+	# networks (atomically), so the next boot is normal. If that fails, say so:
+	# the camera would come back as an access point after a reboot
+	restored=1
+	{ cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync; } || {
+		restored=0
+		logger -p daemon.err -t wifi-ap "could not put the saved networks back into $CONF; copy $KEEP over it by hand before rebooting"
+	}
+
+	i=0
+	while [ $i -lt 20 ]; do
+		if wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
+			if [ "$restored" = 1 ]; then
+				log "access point '$SSID' is up: $URL (hold the button 5 s again, or reboot, to return to the saved Wi-Fi)"
+				play /usr/share/sounds/configurationportalisup.opus >/dev/null 2>&1
+				exit 0
+			fi
+			fail "access point '$SSID' is up ($URL), but the saved networks are not back in $CONF: restore $KEEP by hand before rebooting"
+		fi
+		sleep 1
+		i=$((i + 1))
+	done
+	logger -p daemon.err -t wifi-ap "access point did not come up (see logread); hold the button 5 s again, or reboot, to get the saved Wi-Fi back"
+	play /usr/share/sounds/configurationportalisdown.opus >/dev/null 2>&1
+	exit 1
 }
 
-i=0
-while [ $i -lt 20 ]; do
-	if wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
-		if [ "$restored" = 1 ]; then
-			log "access point '$SSID' is up: $URL (reboot to return to the saved Wi-Fi)"
-			play /usr/share/sounds/configurationportalisup.opus >/dev/null 2>&1
+# back to the saved networks: what S38wpa_supplicant's stop_access_point does
+# (it would need the access point config in the file again to pick that
+# branch), then a normal client start
+to_sta() {
+	if grep -q '^[[:space:]]*mode=2' "$CONF" 2>/dev/null; then
+		# the saved networks never came back after the access point started
+		[ -f "$KEEP" ] || fail "$CONF holds the access point config and there is no $KEEP to restore; staying an access point"
+		log "found the access point config in $CONF; restoring $KEEP first"
+		{ cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync; } || fail "could not restore $CONF from $KEEP (card or overlay full?); staying an access point"
+	fi
+	# without both words S38wpa_supplicant takes the file for "no Wi-Fi saved":
+	# the access point again on the lapcam firmware, Thingino's setup portal on
+	# a plain one
+	# (it counts the words in comments too: then it would start as a client
+	# of nothing, so only real lines count here)
+	if ! grep -v '^[[:space:]]*#' "$CONF" 2>/dev/null | grep -q 'ssid=' || ! grep -v '^[[:space:]]*#' "$CONF" 2>/dev/null | grep -q 'psk='; then
+		fail "$CONF has no network with a password; staying an access point (add one in the Wi-Fi tab first: $URL)"
+	fi
+	# as at boot, the Wi-Fi start-up below then replaces the saved networks
+	# with the card's one
+	if grep -q -E '^wlan_(ssid|pass)=' /mnt/mmcblk0p1/uenv.txt 2>/dev/null; then
+		logger -p daemon.warning -t wifi-ap "/mnt/mmcblk0p1/uenv.txt has wlan_ssid=/wlan_pass=: the Wi-Fi start-up replaces the saved networks in $CONF with that one"
+	fi
+
+	log "leaving the access point for the saved Wi-Fi"
+	start-stop-daemon -K -q -x /sbin/udhcpd
+	start-stop-daemon -K -q -x /sbin/dnsd
+	# the file says "client": this stops wpa_supplicant and drops 100.64.1.1
+	sh "$INIT" stop >/dev/null 2>&1 9>&-
+	ip address delete dev wlan0 "$AP_IP/24" 2>/dev/null
+	rm -f /run/wlan_ap_mode
+	wait_stopped
+	# ifupdown still has wlan0 as up from the boot, but its DHCP client was
+	# stopped when the access point started: forget that, so ifup runs it again
+	ifdown -f wlan0 >/dev/null 2>&1 9>&-
+	sh "$INIT" start >/dev/null 2>&1 9>&-
+	ifup wlan0 >/dev/null 2>&1 9>&-
+
+	i=0
+	while [ $i -lt 30 ]; do
+		if wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
+			log "joined '$(wpa_cli -i wlan0 status 2>/dev/null | sed -n 's/^ssid=//p')'"
+			play /usr/share/sounds/wificonnected.opus >/dev/null 2>&1
 			exit 0
 		fi
-		fail "access point '$SSID' is up ($URL), but the saved networks are not back in $CONF: restore $KEEP by hand before rebooting"
+		sleep 1
+		i=$((i + 1))
+	done
+	if ! pidof wpa_supplicant >/dev/null; then
+		fail "wpa_supplicant did not start (see logread); hold the button 5 s again for the access point, or reboot"
 	fi
-	sleep 1
-	i=$((i + 1))
-done
-logger -p daemon.err -t wifi-ap "access point did not come up (see logread); reboot to get the saved Wi-Fi back"
-play /usr/share/sounds/configurationportalisdown.opus >/dev/null 2>&1
-exit 1
+	log "no saved Wi-Fi joined yet; the camera keeps trying (hold the button 5 s again for the access point)"
+	play /usr/share/sounds/wificonnectionfailed.opus >/dev/null 2>&1
+	exit 0
+}
+
+# Thingino's own setup portal (no Wi-Fi saved at all) is not ours to leave
+if [ -f /run/portal_mode ]; then
+	log "Thingino's setup portal is running, nothing to do"
+	exit 0
+fi
+# one switch at a time, and not during a Wi-Fi save of lapcam: a second hold
+# of the button while the first run still waits would start the opposite
+# switch under it, and the swap of the config file in to_ap would undo a save
+# made in between. Both take the same flock on this file (lapcam: lockWifi in
+# wifi.go); the kernel drops it when the holder exits, however that happens.
+# The daemons started below must not inherit the descriptor (they would keep
+# the lock for good): every command that starts one closes it (9>&-).
+# The file is never removed or replaced (a run holding the old one and a run
+# on a new one would both go ahead).
+LOCK=/run/wifi-ap.flock
+exec 9>"$LOCK"
+if ! flock -n 9; then
+	log "another switch or a Wi-Fi save is running, nothing to do"
+	exit 0
+fi
+
+is_ap=0
+[ -f /run/wlan_ap_mode ] && is_ap=1
+case "${1:-toggle}" in
+toggle) if [ "$is_ap" = 1 ]; then to_sta; else to_ap; fi ;;
+ap) if [ "$is_ap" = 1 ]; then log "already an access point, nothing to do"; else to_ap; fi ;;
+sta) if [ "$is_ap" = 1 ]; then to_sta; else log "not an access point, nothing to do"; fi ;;
+*)
+	echo "Usage: $0 [ap|sta]" >&2
+	exit 1
+	;;
+esac
