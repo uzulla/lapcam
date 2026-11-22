@@ -72,7 +72,7 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
 ## 仕組み
 
 - Go の単体バイナリ (`device/lapcam/`)。beacon / osd-feed と同じく SD カードから起動し、`/etc/init.d/S97lapcam` だけ
-  overlay に置く。SD が無ければ起動しない (その時は uhttpd = Thingino の UI がそのまま動く)。ポートは SD の `lapcam.args`
+  ファームウェアに入れる (手で入れる場合は overlay に置く)。SD が無ければ起動しない (その時は uhttpd = Thingino の UI がそのまま動く)。ポートは SD の `lapcam.args`
   (`-listen :80`)。`:80` の時、S97lapcam は起動の直前に uhttpd を止め、lapcam を止めた時に uhttpd を戻す。Thingino の UI を
   残したければインストール前に `-listen :8000` と書いておく。ポータル / AP モードでも起動する
 - **何も自前では持たない**: 操作は既存のスクリプトと同じコマンド (`record`、`/etc/init.d/S93youtube-relay`、`service`、

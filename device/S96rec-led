@@ -3,6 +3,8 @@
 # the SD card. Install to /etc/init.d/S96rec-led (chmod +x).
 # service enable/disable rec-led. Undo: stop it and remove this file and
 # /usr/sbin/rec-led.
+# Runs in portal mode (no Wi-Fi configured) too, like osd-config and osd-feed:
+# recording to the card does not need the network, and has to look the same.
 
 DAEMON="rec-led"
 DAEMON_PATH="/usr/sbin/$DAEMON"
@@ -17,10 +19,6 @@ running() {
 
 start() {
 	echo -n "Starting $DAEMON: "
-	if [ -f /run/portal_mode ]; then
-		echo "SKIP (portal mode)"
-		return 0
-	fi
 	if [ ! -x "$DAEMON_PATH" ]; then
 		echo "SKIP (no $DAEMON_PATH)"
 		return 0

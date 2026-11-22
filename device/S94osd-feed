@@ -21,10 +21,6 @@ running() {
 
 start() {
 	echo -n "Starting $DAEMON: "
-	if [ -f /run/portal_mode ]; then
-		echo "SKIP (portal mode)"
-		exit 0
-	fi
 	if [ ! -x "$DAEMON_PATH" ] || [ ! -f "$CONFIG" ]; then
 		echo "SKIP (no $DAEMON_PATH or $CONFIG)"
 		exit 0

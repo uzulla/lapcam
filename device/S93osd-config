@@ -18,10 +18,6 @@ running() {
 
 start() {
 	echo -n "Starting $DAEMON: "
-	if [ -f /run/portal_mode ]; then
-		echo "SKIP (portal mode)"
-		exit 0
-	fi
 	# No config check here: osd-config stands by until a config appears on the
 	# SD card (/mnt/mmcblk0p1) or in /etc, so an SD card inserted later is applied.
 	if running; then

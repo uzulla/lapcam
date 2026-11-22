@@ -60,7 +60,7 @@ lapcam の Record ボタン、`rec-button`、ssh の `record` は、prudynt の 
 録画を始める。一方、旧 Thingino UI の Rec ボタンは Thingino の agent API (`/api/v1/actions/record`) に録画を頼む。agent はその要求を `/usr/libexec/agent/adapter.sh` (ストリーマごとのバックエンド) に渡すが、Thingino のビルドは
 prudynt 用の adapter を入れた後に thingino-agent の「null」版で上書きしてしまうため、出荷ファーム `ciao+da40db6` では
 "record action is not supported without an active backend adapter" (旧 UI では "Failed to start recording on channel 0") になる。
-lapcam のファームウェアは prudynt 版 (`device/agent-adapter`) を overlay に置いて直している。直したのはもう 1 点、
+lapcam のファームウェアは prudynt 版 (`device/agent-adapter`) を rootfs に入れて直している。直したのはもう 1 点、
 `record start -c 0` の引数順 (この版の `record` はオプションを先に書かないと usage で終わる。`patches/thingino-agent-adapter-record-args.diff`)。
 
 - 「開始」は agent が `record -c 0 start` を呼ぶので、`recorder.*` の設定で連続録画になる。「停止」は全チャンネル停止

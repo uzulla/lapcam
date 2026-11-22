@@ -7,7 +7,7 @@
 
 ```text
 firmware/   ファームウェアイメージと SD カードを作る (docs/sdcard.md)
-              prepare.sh        Thingino のソース木にパッチと user/<camera>/ (焼き込む設定、overlay) を用意する
+              prepare.sh        Thingino のソース木にパッチと user/<camera>/ (焼き込む設定、rootfs に入れるファイル) を用意する
               build.sh          ビルドホストでイメージを作る -> dist/firmware/、dist/ffmpeg
               make-sdcard.sh    PC でカードに一式を書く (fatextract.py は公式インストーラの取り出し)
               sdcard/           カードに置く雛形 (README.txt、OSD の設定、ロゴ)
@@ -56,7 +56,7 @@ v2.0.0 からがファームウェア + Web UI の体系。
 
 | 何を | どこで | コマンド |
 |---|---|---|
-| ファームウェアイメージと ffmpeg | ビルドホスト | `firmware/build.sh thingino-firmware` (初回 25 分ほど。device/ のスクリプトや overlay だけ変えた後は `PACK_ONLY=1` で数秒。パッチや `prudynt.json` を変えた後は付けない) |
+| ファームウェアイメージと ffmpeg | ビルドホスト | `firmware/build.sh thingino-firmware` (初回 25 分ほど。2 回目以降は差分だけで、device/ のスクリプトを変えた後なら 1〜2 分) |
 | lapcam / osd-feed / beacon | PC (Go) | `device/lapcam/build.sh` など。`go vet` と `go test` を通してから静的リンクのバイナリを `dist/` に出す |
 | SD カード | PC | `firmware/make-sdcard.sh [-u] [-w SSID PASS]… /Volumes/カード` |
 | リリース一式 | PC | `tools/release.sh vX.Y.Z` ([release.md](release.md)) |
