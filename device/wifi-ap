@@ -77,7 +77,7 @@ to_ap() {
 	cp "$CONF" "$KEEP" || fail "could not save the current config to $KEEP; not switching"
 
 	# stop while the config still says "client", so the client-mode teardown runs
-	sh "$INIT" stop >/dev/null 2>&1
+	sh "$INIT" stop >/dev/null 2>&1 9>&-
 	# a file without a saved network counts as "access point" on the lapcam
 	# firmware (it starts as one then): that stop leaves the DHCP client and
 	# its address behind
@@ -100,7 +100,7 @@ network={
 	key_mgmt=NONE
 }
 EOF
-	sh "$INIT" start >/dev/null 2>&1
+	sh "$INIT" start >/dev/null 2>&1 9>&-
 	# the running wpa_supplicant has its config; the file goes back to the saved
 	# networks (atomically), so the next boot is normal. If that fails, say so:
 	# the camera would come back as an access point after a reboot
@@ -156,15 +156,15 @@ to_sta() {
 	start-stop-daemon -K -q -x /sbin/udhcpd
 	start-stop-daemon -K -q -x /sbin/dnsd
 	# the file says "client": this stops wpa_supplicant and drops 100.64.1.1
-	sh "$INIT" stop >/dev/null 2>&1
+	sh "$INIT" stop >/dev/null 2>&1 9>&-
 	ip address delete dev wlan0 "$AP_IP/24" 2>/dev/null
 	rm -f /run/wlan_ap_mode
 	wait_stopped
 	# ifupdown still has wlan0 as up from the boot, but its DHCP client was
 	# stopped when the access point started: forget that, so ifup runs it again
-	ifdown -f wlan0 >/dev/null 2>&1
-	sh "$INIT" start >/dev/null 2>&1
-	ifup wlan0 >/dev/null 2>&1
+	ifdown -f wlan0 >/dev/null 2>&1 9>&-
+	sh "$INIT" start >/dev/null 2>&1 9>&-
+	ifup wlan0 >/dev/null 2>&1 9>&-
 
 	i=0
 	while [ $i -lt 30 ]; do
@@ -189,29 +189,20 @@ if [ -f /run/portal_mode ]; then
 	log "Thingino's setup portal is running, nothing to do"
 	exit 0
 fi
-# one switch at a time: a second hold of the button while the first run still
-# waits would start the opposite switch under it. The lock is a symlink whose
-# target is the owner's pid: made in one step, so it never exists without its
-# owner showing. lapcam reads it too and takes no Wi-Fi save meanwhile (the
-# swap of the config file in to_ap would undo it). /run is empty after a boot;
-# a lock whose owner is gone is taken over.
+# one switch at a time, and not during a Wi-Fi save of lapcam: a second hold
+# of the button while the first run still waits would start the opposite
+# switch under it, and the swap of the config file in to_ap would undo a save
+# made in between. Both take the same flock on this file (lapcam: lockWifi in
+# wifi.go); the kernel drops it when the holder exits, however that happens.
+# The daemons started below must not inherit the descriptor (they would keep
+# the lock for good): every command that starts one closes it (9>&-).
 LOCK=/run/wifi-ap.lock
-# (a directory there is not a lock: ln would put the link inside it and succeed)
-[ -d "$LOCK" ] && [ ! -L "$LOCK" ] && rm -rf "$LOCK"
-if ! ln -s "$$" "$LOCK" 2>/dev/null; then
-	owner=$(readlink "$LOCK" 2>/dev/null)
-	if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
-		log "another switch is still running (pid $owner), nothing to do"
-		exit 0
-	fi
-	rm -rf "$LOCK"
-	if ! ln -s "$$" "$LOCK" 2>/dev/null; then
-		log "another switch has just started, nothing to do"
-		exit 0
-	fi
+if [ -L "$LOCK" ] || [ -d "$LOCK" ]; then rm -rf "$LOCK"; fi # not a file: nothing of ours
+exec 9>"$LOCK"
+if ! flock -n 9; then
+	log "another switch or a Wi-Fi save is running, nothing to do"
+	exit 0
 fi
-trap '[ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ] && rm -f "$LOCK"' EXIT
-trap 'exit 1' INT TERM HUP
 
 is_ap=0
 [ -f /run/wlan_ap_mode ] && is_ap=1

@@ -6,8 +6,8 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -269,7 +269,9 @@ func TestWifiSaveEmptyList(t *testing.T) {
 	}
 }
 
-// no save while wifi-ap switches: its swap of the config file would undo it
+// no save while wifi-ap switches (it holds the flock): its swap of the config
+// file would undo it. And a save holds the same lock, so a switch cannot
+// start in the middle of one.
 func TestWifiSaveRefusedWhileSwitching(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "wpa.conf")
@@ -284,8 +286,15 @@ func TestWifiSaveRefusedWhileSwitching(t *testing.T) {
 	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
 	nets := []wifiNet{{SSID: "Home"}, {SSID: "Track", PSK: "track-pass"}}
 
-	if err := os.Symlink(strconv.Itoa(os.Getpid()), lock); err != nil {
+	// "wifi-ap": another open of the file holding the lock
+	held, err := os.OpenFile(lock, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
 		t.Fatal(err)
+	}
+	defer held.Close()
+	tryLock := func() bool { return syscall.Flock(int(held.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil }
+	if !tryLock() {
+		t.Fatal("could not take the lock")
 	}
 	if _, err := s.wifiSave(nets); err == nil || !strings.Contains(err.Error(), "switching") {
 		t.Fatalf("saved during a switch: %v", err)
@@ -293,12 +302,27 @@ func TestWifiSaveRefusedWhileSwitching(t *testing.T) {
 	if b, _ := os.ReadFile(path); string(b) != conf {
 		t.Fatalf("file changed by the refused save:\n%s", b)
 	}
-	// a lock left by a process that is gone does not block (pid 0 is never one)
-	_ = os.Remove(lock)
-	if err := os.Symlink("0", lock); err != nil {
-		t.Fatal(err)
+	_ = syscall.Flock(int(held.Fd()), syscall.LOCK_UN)
+
+	// a save in progress keeps a switch out, and lets it in when done
+	unlock, ok := lockWifi()
+	if !ok {
+		t.Fatal("lock not free after the switch")
 	}
-	if wifiSwitching() {
-		t.Fatal("a lock without a live owner counts as a switch")
+	if tryLock() {
+		t.Fatal("a switch could start during a save")
+	}
+	unlock()
+	if !tryLock() {
+		t.Fatal("lock still held after the save")
+	}
+	_ = syscall.Flock(int(held.Fd()), syscall.LOCK_UN)
+	// released: the save goes through to the file (here there is no
+	// wpa_supplicant to reload, which is a different error)
+	if _, err := s.wifiSave(nets); err != nil && strings.Contains(err.Error(), "switching") {
+		t.Fatalf("refused without a switch: %v", err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "Track") {
+		t.Fatalf("file not written:\n%s", b)
 	}
 }

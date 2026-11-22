@@ -43,19 +43,25 @@ var wifiInit = "/etc/init.d/S38wpa_supplicant"
 
 const noWifiAPMark = "lapcam-no-wifi-ap"
 
-// wifiAPLock - wifi-ap's lock while it switches between the saved Wi-Fi and
-// the access point: a symlink whose target is its pid. Going to the access
-// point it swaps the config file for a moment and puts the copy it took
-// back, so a save in between would be lost after it was reported as saved.
+// wifiAPLock - the lock shared with wifi-ap (a flock on this file), held by it
+// while it switches between the saved Wi-Fi and the access point, and here
+// while the config file is read and rewritten. Going to the access point
+// wifi-ap swaps the file for a moment and puts back the copy it took: a save
+// in between would be lost after it was reported as saved.
 var wifiAPLock = "/run/wifi-ap.lock"
 
-func wifiSwitching() bool {
-	target, err := os.Readlink(wifiAPLock)
+// lockWifi - ok is false while wifi-ap holds the lock. Where the file cannot
+// be opened (no /run: not a camera) there is no wifi-ap to collide with.
+func lockWifi() (unlock func(), ok bool) {
+	f, err := os.OpenFile(wifiAPLock, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return false
+		return func() {}, true
 	}
-	pid, err := strconv.Atoi(target)
-	return err == nil && pid > 0 && syscall.Kill(pid, 0) == nil
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, false
+	}
+	return func() { _ = f.Close() }, true // closing drops the lock
 }
 
 func emptyWifiOK() bool {
@@ -382,9 +388,11 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
-	if wifiSwitching() {
+	unlock, ok := lockWifi()
+	if !ok {
 		return false, errors.New("the camera is switching between its Wi-Fi and the access point right now; save again in a few seconds")
 	}
+	defer unlock()
 	s.setWifiNote("") // a new save; the last undo notice is history
 	w, err := parseWPA(wpaConf)
 	if err != nil {
@@ -507,6 +515,17 @@ func (s *server) wifiWatch(previous, sd string, gen int) {
 	defer s.relay.mu.Unlock()
 	if s.wifiGen != gen {
 		return
+	}
+	// wifi-ap is switching (the button): the access point is the way to fix
+	// the networks now, and its swap of the file must not be written into
+	unlock, ok := lockWifi()
+	if !ok {
+		log.Printf("wifi: the last save did not reconnect, but the camera is switching Wi-Fi mode: not undone")
+		return
+	}
+	defer unlock()
+	if exists("/run/wlan_ap_mode") {
+		return // became an access point meanwhile: COMPLETED above was the access point's
 	}
 	_ = writeText(wpaConf, previous, 0o600)
 	if sd != "" && exists(sd) {
