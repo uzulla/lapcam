@@ -1,7 +1,7 @@
 # device/ — カメラに入るファイル
 
 カメラ側で動くものの置き場。ファームウェア ([docs/sdcard.md](../docs/sdcard.md)) は `firmware/prepare.sh` がここの
-ファイルを Thingino の `user/<camera>/overlay/` に写してイメージに焼き込み、Go のプログラムは `firmware/make-sdcard.sh` が
+ファイルを Thingino の `user/<camera>/rootfs/` に写してイメージの rootfs に焼き込み、Go のプログラムは `firmware/make-sdcard.sh` が
 SD カードに置く。**ここを変えたらイメージ (かカード) も作り直す。** 使い方は [docs/](../docs/) の各文書。
 
 ## 1. ファームウェアに焼き込むもの・SD カードに置くもの

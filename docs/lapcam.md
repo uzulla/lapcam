@@ -72,7 +72,7 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
 ## 仕組み
 
 - Go の単体バイナリ (`device/lapcam/`)。beacon / osd-feed と同じく SD カードから起動し、`/etc/init.d/S97lapcam` だけ
-  overlay に置く。SD が無ければ起動しない (その時は uhttpd = Thingino の UI がそのまま動く)。ポートは SD の `lapcam.args`
+  ファームウェアに入れる (手で入れる場合は overlay に置く)。SD が無ければ起動しない (その時は uhttpd = Thingino の UI がそのまま動く)。ポートは SD の `lapcam.args`
   (`-listen :80`)。`:80` の時、S97lapcam は起動の直前に uhttpd を止め、lapcam を止めた時に uhttpd を戻す。Thingino の UI を
   残したければインストール前に `-listen :8000` と書いておく。ポータル / AP モードでも起動する
 - **何も自前では持たない**: 操作は既存のスクリプトと同じコマンド (`record`、`/etc/init.d/S93youtube-relay`、`service`、
@@ -138,8 +138,18 @@ ssh root@<camera-ip> '/etc/init.d/S97lapcam stop; rm /etc/init.d/S97lapcam /mnt/
 ```
 
 lapcam を止めた時点で uhttpd が起動し直す (S97lapcam の stop がそうする)。`lapcam.json` (プロファイル) は SD に残る。
-Thingino の UI のファイル (`/var/www`) には何も変えていない。工場出荷状態に戻した場合も overlay が消えるので
-Thingino の UI に戻る。
+Thingino の UI のファイル (`/var/www`) には何も変えていない。
+
+Thingino の UI に戻るのに効いているのは、**カードから `lapcam` を消すこと**: `S97lapcam` はカードにバイナリが無ければ何もせず、
+uhttpd (Thingino の UI) がそのまま動く。`rm /etc/init.d/S97lapcam` の扱いは個体で違う:
+
+- **手で入れた個体**: `S97lapcam` は overlay (データ領域) にあるので、本当に消える
+- **lapcam のファームウェアの個体**: `S97lapcam` は rootfs に入っている。`rm` はデータ領域に「消した」印を置くだけで、
+  ファームウェアを焼き直すかデータ領域が消えると元に戻る。その時カードに `lapcam` があれば、また lapcam が起動する
+
+**工場出荷状態に戻す (本体ボタン 20 秒) は、Thingino の UI に戻す手順ではない**。手で入れた個体では overlay ごと `S97lapcam` が消えて
+Thingino の UI に戻るが、lapcam のファームウェアの個体では rootfs の `S97lapcam` が残り、カードに `lapcam` があるかぎり次の起動でも
+lapcam が動く (消えるのはパスワードなどフラッシュ側の設定だけ: [sdcard.md](sdcard.md#データ領域が消えた時))。
 
 旧 Thingino UI 向けに作った自前ページ (`device/www/` の YouTube Live と OSD Settings、Rec ボタンの agent adapter) は
 uhttpd が止まっているので使えないが、ファイルとインストーラは残してある (uhttpd を戻せば動く)。

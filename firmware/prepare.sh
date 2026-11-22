@@ -27,8 +27,10 @@
 #                       day/night switching off, held at day
 #       local.uenv.txt  U-Boot env: red LED on while the bootloader runs, so a
 #                       flash from the SD card (1-2 minutes) is visible
-#       overlay/        the data partition's first content, i.e. what the
-#                       device/install-*.sh scripts put on a camera by hand:
+#       rootfs/         a second root filesystem overlay (BR2_ROOTFS_OVERLAY in
+#                       local.fragment): these files become part of the
+#                       read-only rootfs, i.e. what the device/install-*.sh
+#                       scripts put on a camera by hand:
 #                       init scripts (S37wifi-from-sd S37keys-from-sd S93osd-config
 #                       S93youtube-relay S94osd-feed S95beacon S96rec-led
 #                       S97lapcam), the helper scripts in /usr/sbin, the button
@@ -36,10 +38,18 @@
 #                       agent adapter with the record fix, hostname lapcam-xxxx
 #                       (Thingino's S04hostname with "lapcam" as the default
 #                       name), the _lapcam._tcp mDNS service, timezone
-#     overlay/ is wiped and regenerated. The other files are overwritten; a
-#     local.mk or opt/ of your own in user/<camera>/ is left alone.
+#     Not in overlay/ (the data partition's first content, where they were
+#     up to v2.2.0): Thingino formats the data partition when its JFFS2 has a
+#     bad block (/init, "Invalid JFFS2 blocks detected"; a power cut while it
+#     is written is enough) and on a factory reset, and the camera then came
+#     up as plain Thingino: no lapcam, hostname ing-wyze-cam3-xxxx, no Wi-Fi
+#     from the card, the setup portal, a button that does not record. In the
+#     rootfs they survive that; the camera only loses its settings (password
+#     back to root; Wi-Fi and SSH keys come back from the card).
+#     rootfs/ and overlay/ are wiped and rootfs/ regenerated. The other files
+#     are overwritten; a local.mk or opt/ of your own in user/<camera>/ is left alone.
 #
-# Not in the image (the flash is 16 MB: the rootfs has about 50 KB to spare,
+# Not in the image (the flash is 16 MB: the rootfs has about 20 KB to spare,
 # the data partition 8 MB): the Go programs (lapcam 9 MB, osd-feed 9.5 MB,
 # beacon 4 MB) and ffmpeg (2.5 MB) stay on the SD card, where the init scripts
 # look for them anyway (firmware/make-sdcard.sh puts them there).
@@ -158,25 +168,43 @@ echo "  BUILD_ID will be $branch+$hash"
 # --- 2. user/<camera>/ -------------------------------------------------------
 
 U=$TREE/user/$CAMERA
-O=$U/overlay
+O=$U/rootfs
 echo "User layer $U"
-rm -rf "$O"
+# overlay/: where these files were before (the data partition); a tree
+# prepared by an older prepare.sh must not put them there as well
+rm -rf "$O" "$U/overlay"
 mkdir -p "$O/etc/init.d" "$O/etc/mdns.d" "$O/usr/sbin"
 
-# install <src> <dst-in-overlay> <mode>
+# install <src> <dst-in-rootfs> <mode>
 put() {
 	cp "$1" "$O$2"
 	chmod "$3" "$O$2"
 }
 
-cat >"$U/local.fragment" <<'EOF'
+# BR2_ROOTFS_OVERLAY: Thingino's own overlay (configs/fragments/core.fragment)
+# and then ours, which may replace its files (S04hostname)
+if ! grep -q '^BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_THINGINO_PATH)/overlay"$' "$TREE/configs/fragments/core.fragment"; then
+	echo "Thingino's BR2_ROOTFS_OVERLAY is no longer the single directory this script appends to: $TREE/configs/fragments/core.fragment" >&2
+	exit 1
+fi
+# local.fragment's line replaces the setting: an overlay another fragment adds
+# (none does at da40db6) would silently drop out of the image
+others=$(grep -rl '^BR2_ROOTFS_OVERLAY=' "$TREE/configs" | grep -v '/configs/fragments/core\.fragment$' || true)
+if [ -n "$others" ]; then
+	echo "other fragments set BR2_ROOTFS_OVERLAY too; local.fragment's line would drop their overlays:" >&2
+	echo "$others" >&2
+	exit 1
+fi
+cat >"$U/local.fragment" <<EOF
 # lapcam (firmware/prepare.sh): full-ASCII 8x8 font for the text OSD
 BR2_PACKAGE_PRUDYNT_T_OSD_FONT_8X8=y
+# lapcam's files go into the rootfs (see prepare.sh for why not the data partition)
+BR2_ROOTFS_OVERLAY="\$(BR2_EXTERNAL_THINGINO_PATH)/overlay \$(BR2_EXTERNAL_THINGINO_PATH)/user/$CAMERA/rootfs"
 EOF
 
 # prudynt.json is merged into /etc/prudynt.json when the prudynt-t package is
 # installed, so a change here needs that package rebuilt (thingino.json is
-# merged at the end of every build, and the overlay is packed every time)
+# merged at the end of every build, and rootfs/ is copied into the rootfs by every build)
 cat >"$U/prudynt.json.new" <<'EOF'
 {
   "general": {
@@ -237,8 +265,8 @@ done
 # the agent's backend adapter (the Rec button of Thingino's UI and lapcam's
 # recording go through it): the build installs prudynt's adapter and then
 # thingino-agent's "null" one on top of it, so the image has the null adapter
-# like the shipped firmware (docs/recording.md). The overlay puts the prudynt
-# one with the record-argument fix in place, as install-agent-adapter.sh does
+# like the shipped firmware (docs/recording.md). The rootfs overlay puts the
+# prudynt one with the record-argument fix in place, as install-agent-adapter.sh does
 mkdir -p "$O/usr/libexec/agent"
 put "$REPO/device/agent-adapter" /usr/libexec/agent/adapter.sh 644
 
@@ -265,13 +293,13 @@ chmod 644 "$dst"
 # Thingino's S04hostname does exactly this ("<default>-<suffix>" when the
 # name is the default or an earlier auto-generated one, a custom name kept),
 # with the default taken from /etc/os-release, which the build sets to
-# ing-wyze-cam3. The overlay carries Thingino's script with that one function
+# ing-wyze-cam3. The image carries Thingino's script with that one function
 # answering "lapcam" instead; a name set by hand (device/set-camera-name.sh)
-# is kept as before. /etc/hostname starts as the default name itself (the
-# rootfs has ing-wyze-cam3 there, which the script would take for a custom
-# name and keep); /etc/hosts is left to it.
-echo "$NAME" >"$O/etc/hostname"
-chmod 644 "$O/etc/hostname"
+# is kept as before. The rootfs's /etc/hostname is ing-wyze-cam3 (the build
+# writes it after the overlays), which the script would take for a custom
+# name and keep: a second edit (hostname-default.awk) makes it treat
+# Thingino's default, and a name generated from it (ing-wyze-cam3-xxxx), like
+# its own. /etc/hosts is left to it.
 src=$TREE/overlay/etc/init.d/S04hostname
 dst=$O/etc/init.d/S04hostname
 if ! grep -q 'sed -n .s/^HOSTNAME=//p. \$OS_RELEASE_FILE' "$src"; then
@@ -282,13 +310,15 @@ fi
 	echo "#!/bin/sh"
 	echo "# lapcam (firmware/prepare.sh): Thingino's S04hostname with the default name"
 	echo "# \"$NAME\" instead of the one in /etc/os-release, so cameras are named $NAME-<4 hex>"
-	sed -e '1{/^#!/d;}' -e "s|echo \"\$(sed -n 's/^HOSTNAME=//p' \$OS_RELEASE_FILE)\"|echo $NAME|" "$src"
+	sed -e '1{/^#!/d;}' -e "s|echo \"\$(sed -n 's/^HOSTNAME=//p' \$OS_RELEASE_FILE)\"|echo $NAME|" "$src" |
+		awk -f "$HERE/hostname-default.awk"
 } >"$dst"
 chmod 755 "$dst"
-if ! grep -q "echo $NAME\$" "$dst"; then
+if ! grep -q "echo $NAME\$" "$dst" || ! grep -q '^	os_hostname=' "$dst" || ! grep -q "is Thingino's default and should be generated" "$dst"; then
 	echo "could not put the default name into $dst" >&2
 	exit 1
 fi
+sh -n "$dst" || { echo "the edited S04hostname does not parse: $dst" >&2; exit 1; }
 
 # the release this image belongs to (docs/release.md): lapcam reads it and
 # compares it with its own version; tools/find-camera sees it in mDNS
@@ -329,5 +359,5 @@ echo "$TIMEZONE" >"$O/etc/timezone"
 echo "$TZ_POSIX" >"$O/etc/TZ"
 echo user >"$O/etc/timezone.source"
 
-echo "  $(find "$O" -type f | wc -l | tr -d ' ') overlay files, local.fragment, local.uenv.txt, prudynt.json, thingino.json; lapcam version $VERSION"
+echo "  $(find "$O" -type f | wc -l | tr -d ' ') rootfs files, local.fragment, local.uenv.txt, prudynt.json, thingino.json; lapcam version $VERSION"
 echo "Done. Build with: firmware/build.sh $TREE $CAMERA"

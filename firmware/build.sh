@@ -4,8 +4,9 @@
 # builder image and the download cache), from anywhere:
 #   firmware/build.sh <thingino-firmware dir> [camera]
 #     camera: wyze_cam3_t31x_gc2053_atbm6031 (the default)
-#   PACK_ONLY=1 firmware/build.sh ...   only redo the user layer and the images
-#                                       (after a change to device/ files; seconds)
+# (PACK_ONLY=1, which only repacked the images, is gone: lapcam's files are in
+# the rootfs now, so a change to device/ files needs the incremental build,
+# which is what a plain run does - a minute or two when nothing else changed.)
 #
 # Runs firmware/prepare.sh (patches, user/<camera>/), then Thingino's own
 # incremental build and packing inside the official builder container (the
@@ -27,6 +28,10 @@ REPO=$(cd "$HERE/.." && pwd)
 IMAGE=ghcr.io/themactep/thingino-builder-image:latest
 DL_CACHE=thingino-dl-cache
 
+if [ "${PACK_ONLY:-0}" != 0 ]; then
+	echo "PACK_ONLY is gone (lapcam's files are in the rootfs now): run without it; the incremental build takes a minute or two" >&2
+	exit 1
+fi
 if [ -z "$TREE" ] || [ ! -f "$TREE/Makefile" ]; then
 	echo "Usage: $0 <thingino-firmware dir> [camera]" >&2
 	exit 1
@@ -78,38 +83,26 @@ for d in "$TREE/output/$BRANCH/$CAMERA"-*; do
 	OUT=$d
 done
 if [ -n "$OUT" ]; then
-	# the data partition is built from user/<camera>/overlay, the full image
-	# from the partitions: make's timestamps do not see a changed overlay file,
-	# so both are removed to be remade
-	rm -f "$OUT"/images/data.jffs2 "$OUT"/images/thingino-"$CAMERA".bin
-elif [ "$PACK_ONLY" = 1 ]; then
-	echo "nothing built yet for $CAMERA in $TREE/output/$BRANCH: run without PACK_ONLY first" >&2
-	exit 1
+	# the images are made from the partitions' directories: make's timestamps
+	# do not see a changed file of the user layer, so they are removed to be
+	# remade (the rootfs image is rebuilt by every Buildroot run anyway)
+	rm -f "$OUT"/images/data.jffs2 "$OUT"/images/rootfs.squashfs "$OUT"/images/thingino-"$CAMERA".bin
 fi
 
 REBUILD=$TREE/user/$CAMERA/.rebuild
-if [ "$PACK_ONLY" = 1 ]; then
-	if [ -s "$REBUILD" ]; then
-		echo "prepare.sh applied new patches to: $(sort -u "$REBUILD" | tr '\n' ' '); run without PACK_ONLY so they are built" >&2
-		exit 1
-	fi
-	echo "Packing the images (PACK_ONLY)"
-	in_tree pack
-else
-	if [ -s "$REBUILD" ] && [ -n "$OUT" ]; then
-		# patches prepare.sh has just applied: Buildroot would keep the stale
-		# build of those packages
-		for pkg in $(sort -u "$REBUILD"); do
-			echo "Rebuilding $pkg (patched)"
-			in_tree "rebuild-$pkg"
-		done
-	fi
-	rm -f "$REBUILD"
-	echo "Building the firmware (incremental; the first run compiles everything)"
-	in_tree fast
-	echo "Building ffmpeg (for the SD card)"
-	in_tree br-thingino-ffmpeg
+if [ -s "$REBUILD" ] && [ -n "$OUT" ]; then
+	# patches prepare.sh has just applied: Buildroot would keep the stale
+	# build of those packages
+	for pkg in $(sort -u "$REBUILD"); do
+		echo "Rebuilding $pkg (patched)"
+		in_tree "rebuild-$pkg"
+	done
 fi
+rm -f "$REBUILD"
+echo "Building the firmware (incremental; the first run compiles everything)"
+in_tree fast
+echo "Building ffmpeg (for the SD card)"
+in_tree br-thingino-ffmpeg
 
 OUT=$(ls -d "$TREE/output/$BRANCH/$CAMERA"-* 2>/dev/null | head -n 1)
 [ -n "$OUT" ] || { echo "no output directory for $CAMERA under $TREE/output/$BRANCH" >&2; exit 1; }
@@ -131,7 +124,7 @@ case "$build_id" in
 *) echo "WARNING: BUILD_ID is '$build_id', not ciao+da40db6: device/common.sh will refuse this image (see prepare.sh)" >&2 ;;
 esac
 FFMPEG=$OUT/per-package/thingino-ffmpeg/target/usr/bin/ffmpeg
-if [ ! -f "$FFMPEG" ] && [ "$PACK_ONLY" != 1 ]; then
+if [ ! -f "$FFMPEG" ]; then
 	echo "ffmpeg was not built: $FFMPEG" >&2
 	exit 1
 fi
@@ -140,8 +133,21 @@ cp "$BIN" "$REPO/dist/firmware/thingino-$CAMERA.bin"
 echo "$build_id" >"$REPO/dist/firmware/BUILD"
 # the version prepare.sh wrote into the image (not computed again: the tree
 # may have moved during a long build)
-sed -n 's/^VERSION=//p' "$OUT/data/overlay/etc/lapcam-release" >"$REPO/dist/firmware/VERSION"
-[ -s "$REPO/dist/firmware/VERSION" ] || { echo "no VERSION in $OUT/data/overlay/etc/lapcam-release" >&2; exit 1; }
+sed -n 's/^VERSION=//p' "$OUT/target/etc/lapcam-release" >"$REPO/dist/firmware/VERSION"
+[ -s "$REPO/dist/firmware/VERSION" ] || { echo "no VERSION in $OUT/target/etc/lapcam-release" >&2; exit 1; }
+# the files must be in the rootfs image itself, not only in the target
+# directory. unsquashfs is the build's own (host/bin), a binary made in the
+# builder container, so it is run there: on the host it may not start
+rel=${OUT#"$TREE"/}
+if ! listing=$(docker run --rm --user "$(id -u):$(id -g)" -v "$TREE":/workspace -w /workspace "$IMAGE" \
+	"/workspace/$rel/host/bin/unsquashfs" -l "/workspace/$rel/images/rootfs.squashfs"); then
+	echo "could not list $OUT/images/rootfs.squashfs with the build's unsquashfs (see the message above)" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$listing" | grep -q '/etc/lapcam-release$'; then
+	echo "rootfs.squashfs has no /etc/lapcam-release: lapcam's files did not get into the rootfs (BR2_ROOTFS_OVERLAY in user/$CAMERA/local.fragment?)" >&2
+	exit 1
+fi
 if [ -f "$FFMPEG" ]; then
 	cp "$FFMPEG" "$REPO/dist/ffmpeg"
 	# ffmpeg carries no version string of its own: the firmware's goes next to it

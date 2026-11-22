@@ -46,6 +46,10 @@ Wyze Cam v3 の Setup ボタンは、Thingino では起動した後もいつで�
 0.7 秒待っても次が来なければ 1 回押しとして `tell %ip`。1 秒以上押していた離し方はクリックに数えず、`TIMED` の行に任せる。
 詳細とログの見方は [recording.md](recording.md#本体のボタンのダブルクリックで開始停止-rec-button)。
 
+Wi-Fi が未設定で設定用ポータルになっている時 (`/run/portal_mode`) も、録画、録画中の赤 LED (`rec-led`)、OSD (`osd-config`、`osd-feed`) は
+動く (v2.2.0 まではこの 3 つを止めていた)。ネットワークが要る配信 (`youtube-relay`) と `beacon` は動かない。この状態では時計を合わせられない (NTP に届かない) ので、
+カメラの時計はファームウェアを作った日時から進み、録画のフォルダとファイル名、OSD の時計もその日時になる。
+
 ## Wi-Fi AP (5 秒)
 
 保存した Wi-Fi に繋がらない時のリカバリ用。保存した Wi-Fi は消えず、スマホを `lapcam-xxxx` に繋いで `http://100.64.1.1/`
@@ -62,9 +66,10 @@ Wyze Cam v3 の Setup ボタンは、Thingino では起動した後もいつで�
 `firstboot -f` は設定を保存しているフラッシュの領域 (overlay、`data` パーティション) と U-Boot の環境変数 (`env`) を消して再起動する。
 
 - Thingino の設定 (Wi-Fi、root のパスワード、`/etc/prudynt.json` など) がすべて初期値に戻る
-- ファームウェアの個体では、データ領域はイメージの overlay (起動スクリプト、ボタン設定、ホスト名、`/etc/lapcam-release`、
-  mDNS の設定) をそのまま焼いたものなので、それらも消えると考えられる (未確認)。U-Boot 環境変数の赤 LED (`gpio_user`) も消える。
-  戻すにはカードの `autoupdate-full.bin` で焼き直す (`autoupdate-full.done` を消してから。[sdcard.md](sdcard.md))
+- ファームウェアの個体では、lapcam のファイル (起動スクリプト、ボタン設定、ホスト名、`/etc/lapcam-release`、mDNS の設定) は
+  rootfs に入っているので消えない。再起動後も `lapcam-xxxx` のまま、カードの `wpa_supplicant.conf` と `authorized_keys` が
+  入り直す ([sdcard.md](sdcard.md#データ領域が消えた時)。v2.2.0 まではこれらもデータ領域にあり、消えると素の Thingino になった)。
+  U-Boot 環境変数の赤 LED (`gpio_user`) は消える (戻すにはカードの `autoupdate-full.bin` で焼き直す)
 - **SD カードの中身は消えない** (`lapcam`、`osd-feed`、`beacon`、`ffmpeg`、`youtube-relay.json`、`prudynt-osd.json`、
   `wpa_supplicant.conf`、`authorized_keys`、録画など)
 - 素の Thingino に手で入れた個体は `device/install*.sh` から入れ直す
