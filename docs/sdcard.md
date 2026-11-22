@@ -166,9 +166,11 @@ Web UI から変えた画質の設定など) だけ。
 
 注意:
 
-- **起動時の配信も既定 (有効) に戻る**。lapcam の Stream タブ「Start streaming when the camera boots」は起動スクリプト
-  `S93youtube-relay` の実行ビットで、これもデータ領域に保存される。切っていた個体でも、データ領域が消えた後はカードに
-  ストリームキーがあれば起動時に配信を始める (焼いた直後と同じ)。v2.2.0 までは、消えた後は何も動かなかった
+- **起動時の配信を切っていた個体は、切ったまま**。lapcam の Stream タブ「Start streaming when the camera boots」は起動スクリプト
+  `S93youtube-relay` の実行ビット (データ領域に保存され、消えると有効に戻る) に加えて、カードの `youtube-relay.json` に
+  `"autostart": false` と書く。`S93youtube-relay` は起動時にそれを見て始めない。lapcam を使わずに ssh から
+  `service disable youtube-relay` だけで切った個体は、カードに印が無いので有効に戻る (焼いた直後と同じ: カードにストリームキーが
+  あれば起動時に配信を始める)
 - 起動スクリプトやボタン設定を実機で書き換えたり `service enable / disable` したりすると、そのファイルはデータ領域に写しが
   できて、以後は rootfs の新しい版より優先される。イメージ全体を焼く更新 (`autoupdate-full.bin`、`sysupgrade <イメージ>`) は
   データ領域も書き直すので問題にならないが、rootfs だけを入れ替える更新 (`sysupgrade -r`) では古い写しが残る

@@ -3,6 +3,16 @@
 # Install to /etc/init.d/S93youtube-relay (chmod +x).
 # Enable/disable with: service enable youtube-relay / service disable youtube-relay
 # (or set "enabled": false in /etc/youtube-relay.json)
+#
+# "autostart": false in the relay's config (the SD card's youtube-relay.json,
+# else /etc/youtube-relay.json) also keeps it from starting at boot. lapcam's
+# "Start streaming when the camera boots" writes it next to the executable bit
+# that "service disable" clears: the bit is kept in the flash's data partition,
+# and when that partition is formatted (docs/sdcard.md) the script from the
+# rootfs is executable again - the camera would go live at the next boot
+# although the user had turned that off. The card's file survives. A start by
+# hand while it says false: YOUTUBE_RELAY_MANUAL=1 /etc/init.d/S93youtube-relay start
+# (lapcam's Go live does that).
 
 DAEMON="youtube-relay"
 DAEMON_PATH="/usr/sbin/youtube-relay"
@@ -21,6 +31,16 @@ start() {
 	if [ -f /run/portal_mode ]; then
 		echo "SKIP (portal mode)"
 		exit 0
+	fi
+	if [ -z "$YOUTUBE_RELAY_MANUAL" ]; then
+		for c in /mnt/mmcblk0p1/youtube-relay.json /etc/youtube-relay.json; do
+			[ -f "$c" ] || continue
+			if [ "$(jct "$c" get autostart 2>/dev/null)" = "false" ]; then
+				echo "SKIP (\"autostart\": false in $c; YOUTUBE_RELAY_MANUAL=1 starts it anyway)"
+				exit 0
+			fi
+			break # the first file that exists is the one the relay reads
+		done
 	fi
 	# No config check here: the supervisor stands by until a usable config
 	# appears on the SD card (/mnt/mmcblk0p1) or in /etc, so an SD card

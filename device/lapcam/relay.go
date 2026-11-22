@@ -265,7 +265,15 @@ func runCmdTimeout(timeout time.Duration, name string, args ...string) (string, 
 }
 
 // op - start/stop/restart now (through sh, so it works while disabled at
-// boot too), enable/disable = at boot, via Thingino's "service"
+// boot too), enable/disable = at boot.
+//
+// "At boot" is kept in two places. Thingino's "service" sets the init
+// script's executable bit, which lives in the flash's data partition; that
+// partition can be formatted behind the user's back (docs/sdcard.md), and the
+// script from the rootfs is executable again. So the choice is also written
+// into the relay's config as "autostart" (on the SD card, like the stream
+// key), and S93youtube-relay does not start at boot when it says false. A
+// start asked for here must still work then: relayManualEnv tells the script.
 func (rl *relay) op(op string) (string, error) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -274,11 +282,41 @@ func (rl *relay) op(op string) (string, error) {
 		// S93youtube-relay's stop waits up to 45 s for the supervisor, then
 		// kills it: give the whole sequence room, or a restart cut short by
 		// our timeout would leave the relay stopped
-		return runCmdTimeout(relayOpTimeout, "sh", relayInit, op)
+		return runCmdTimeout(relayOpTimeout, "env", relayManualEnv, "sh", relayInit, op)
 	case "enable", "disable":
+		// the config first: if it cannot be written, nothing has changed yet
+		if err := setAutostartFlag(rl.configPath(), op == "enable"); err != nil {
+			return "", fmt.Errorf("could not save the choice in %s: %w", rl.configPath(), err)
+		}
 		return runCmd("service", op, "youtube-relay")
 	}
 	return "", errBadOp
+}
+
+// relayManualEnv - see op and S93youtube-relay
+const relayManualEnv = "YOUTUBE_RELAY_MANUAL=1"
+
+// autostartFlag - "autostart" in the relay's config: false only when the file
+// says false (a config without the key, or none, leaves it to the init script)
+func autostartFlag(path string) bool {
+	cfg, err := readJSONFile(path)
+	if err != nil {
+		return true
+	}
+	v, ok := cfg["autostart"].(bool)
+	return !ok || v
+}
+
+// setAutostartFlag - write "autostart" into the relay's config, keeping its
+// other keys (a config that does not exist yet gets just this key: without a
+// stream key the relay does nothing with it)
+func setAutostartFlag(path string, on bool) error {
+	cfg, err := readJSONFile(path)
+	if err != nil {
+		return err
+	}
+	cfg["autostart"] = on
+	return writeJSONFile(path, cfg, 0o600)
 }
 
 var errBadOp = errors.New("unknown op")
@@ -303,9 +341,11 @@ func relayRunning() bool {
 	return err == nil && strings.Contains(string(cmdline), "youtube-relay")
 }
 
-func relayAutostart() bool {
+// autostart - the relay starts at boot: the init script is executable and
+// the config does not say "autostart": false
+func (rl *relay) autostart() bool {
 	fi, err := os.Stat(relayInit)
-	return err == nil && fi.Mode()&0o100 != 0
+	return err == nil && fi.Mode()&0o100 != 0 && autostartFlag(rl.configPath())
 }
 
 // relayFfmpeg - the ffmpeg the relay started: a child of the supervisor with
@@ -396,7 +436,7 @@ func (s *server) handleRelayConfigGet(w http.ResponseWriter, r *http.Request) {
 		"profiles":    cfg.Profiles,
 		"active":      cfg.Active,
 		"config_path": s.relay.configPath(),
-		"autostart":   relayAutostart(),
+		"autostart":   s.relay.autostart(),
 	}
 	if cfg.Warning != "" {
 		resp["warning"] = cfg.Warning
