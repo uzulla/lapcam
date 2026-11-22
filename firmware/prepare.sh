@@ -49,7 +49,7 @@
 #     rootfs/ and overlay/ are wiped and rootfs/ regenerated. The other files
 #     are overwritten; a local.mk or opt/ of your own in user/<camera>/ is left alone.
 #
-# Not in the image (the flash is 16 MB: the rootfs has about 50 KB to spare,
+# Not in the image (the flash is 16 MB: the rootfs has about 20 KB to spare,
 # the data partition 8 MB): the Go programs (lapcam 9 MB, osd-feed 9.5 MB,
 # beacon 4 MB) and ffmpeg (2.5 MB) stay on the SD card, where the init scripts
 # look for them anyway (firmware/make-sdcard.sh puts them there).
@@ -187,6 +187,14 @@ if ! grep -q '^BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_THINGINO_PATH)/overlay"$' "$TR
 	echo "Thingino's BR2_ROOTFS_OVERLAY is no longer the single directory this script appends to: $TREE/configs/fragments/core.fragment" >&2
 	exit 1
 fi
+# local.fragment's line replaces the setting: an overlay another fragment adds
+# (none does at da40db6) would silently drop out of the image
+others=$(grep -rl '^BR2_ROOTFS_OVERLAY=' "$TREE/configs" | grep -v '/configs/fragments/core\.fragment$' || true)
+if [ -n "$others" ]; then
+	echo "other fragments set BR2_ROOTFS_OVERLAY too; local.fragment's line would drop their overlays:" >&2
+	echo "$others" >&2
+	exit 1
+fi
 cat >"$U/local.fragment" <<EOF
 # lapcam (firmware/prepare.sh): full-ASCII 8x8 font for the text OSD
 BR2_PACKAGE_PRUDYNT_T_OSD_FONT_8X8=y
@@ -196,7 +204,7 @@ EOF
 
 # prudynt.json is merged into /etc/prudynt.json when the prudynt-t package is
 # installed, so a change here needs that package rebuilt (thingino.json is
-# merged at the end of every build, and the overlay is packed every time)
+# merged at the end of every build, and rootfs/ is copied into the rootfs by every build)
 cat >"$U/prudynt.json.new" <<'EOF'
 {
   "general": {
@@ -306,7 +314,7 @@ fi
 		awk -f "$HERE/hostname-default.awk"
 } >"$dst"
 chmod 755 "$dst"
-if ! grep -q "echo $NAME\$" "$dst" || ! grep -q '^	os_hostname=' "$dst"; then
+if ! grep -q "echo $NAME\$" "$dst" || ! grep -q '^	os_hostname=' "$dst" || ! grep -q "is Thingino's default and should be generated" "$dst"; then
 	echo "could not put the default name into $dst" >&2
 	exit 1
 fi

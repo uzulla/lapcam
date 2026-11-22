@@ -41,7 +41,7 @@ Thingino のビルドには `user/<camera>/` という「ユーザー層」が�
 | `prudynt.json` | `/etc/prudynt.json` の既定への上書き: stream0 を 1280x720 / 10 fps / gop 20 / 1 Mbps ([recording.md](recording.md) の実測条件)、`osd_pool_size` 2048、録画先 SD の `recordings`、JPEG チャンネル 5 fps 品質 60 |
 | `thingino.json` | `netwatch.enabled=false` ([netwatch.md](netwatch.md))、`daynight.enabled=false` + `force_mode=day` (昼夜の自動切り替えを止めて昼に固定。車内では IR LED はガラスに反射するだけで、トンネルや日陰で白黒に切り替わると配信の見た目が途中で変わる。daynightd 自体は眠ったまま残す: 起動スクリプト S10daynightd が prudynt / agent の API キーを初回起動で作るので止めない。無効時の CPU は 0%) |
 | `local.uenv.txt` | U-Boot 環境変数 `gpio_user=38o`: U-Boot が動いている間は正面の赤 LED を点ける (カーネルが起動すると消える)。通常起動なら 2 秒、SD からの書き換え中は 1〜2 分点き続けるので、焼いている最中だと分かる |
-| `rootfs/` | **rootfs (読み取り専用の squashfs) に入れるファイル** (`local.fragment` の `BR2_ROOTFS_OVERLAY` に足す。v2.2.0 まではデータ領域の初期内容 `overlay/` だった: 下の「データ領域が消えた時」)。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S37keys-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam-xxxx` (Thingino の `S04hostname` を既定名 `lapcam` に差し替え、rootfs の初期名 `ing-wyze-cam3` とそこから作られた `ing-wyze-cam3-xxxx` も「自動で付いた名前」として付け直すようにしたもの。xxxx は SoC から作る基準 MAC の末尾 4 桁。Wi-Fi の MAC はそれに 1 を足した値なので一致しない。手で付けた名前は残す。設定用 AP と 5 秒長押しの AP はホスト名をそのまま名前にする)、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
+| `rootfs/` | **rootfs (読み取り専用の squashfs) に入れるファイル** (`local.fragment` の `BR2_ROOTFS_OVERLAY` に足す。v2.2.0 まではデータ領域の初期内容 `overlay/` だった: 下の「データ領域が消えた時」)。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S37keys-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam-xxxx` (Thingino の `S04hostname` を既定名 `lapcam` に差し替え、rootfs の初期名 `ing-wyze-cam3` とそこから作られた `ing-wyze-cam3-xxxx` も「自動で付いた名前」として付け直すようにしたもの。xxxx は SoC から作る基準 MAC の末尾 4 桁。Wi-Fi の MAC はそれに 1 を足した値なので一致しない。手で付けた名前は残す (`ing-wyze-cam3-` に 16 進 4 桁が続く名前だけは、Thingino が自動で付けたものと区別できないので付け直す)。設定用 AP と 5 秒長押しの AP はホスト名をそのまま名前にする)、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
 
 パッチは [build.md](build.md) で手で当てていたもの (ffmpeg の RTMPS と chunk size、prudynt の OSD と警告抑止、
 agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wifi-portal-ssid.diff`: Wi-Fi 未設定時に開く
@@ -148,6 +148,7 @@ backup 領域が残り、`cfg-autorestore` が以前のパスワードと SSH �
 | SSH の鍵 | `/root/.ssh/authorized_keys` は消える → カードの `authorized_keys` があれば起動時に戻る。ホスト鍵は作り直される (PC で known_hosts の警告) |
 | Wi-Fi | 消える → カードの `wpa_supplicant.conf` があれば起動時に戻る |
 | ホスト名 (`lapcam-xxxx`)、ボタン設定、タイムゾーン、prudynt の既定、netwatch オフ、昼夜切り替えオフ | ファームウェアに焼き込んであるので同じ値 |
+| ストリームキー、OSD の設定、ロゴ、録画、lapcam のプロファイル | カード上なので残る |
 
 ### データ領域が消えた時
 
@@ -163,9 +164,17 @@ v2.2.0 までは lapcam のファイル (起動スクリプト、ボタン設定
 Wi-Fi と SSH 鍵はカードから入り直し、ボタンも録画も lapcam もそのまま。消えるのはフラッシュ側の設定 (root のパスワードが `root` に戻る、
 Web UI から変えた画質の設定など) だけ。
 
+注意:
+
+- **起動時の配信も既定 (有効) に戻る**。lapcam の Stream タブ「Start streaming when the camera boots」は起動スクリプト
+  `S93youtube-relay` の実行ビットで、これもデータ領域に保存される。切っていた個体でも、データ領域が消えた後はカードに
+  ストリームキーがあれば起動時に配信を始める (焼いた直後と同じ)。v2.2.0 までは、消えた後は何も動かなかった
+- 起動スクリプトやボタン設定を実機で書き換えたり `service enable / disable` したりすると、そのファイルはデータ領域に写しが
+  できて、以後は rootfs の新しい版より優先される。イメージ全体を焼く更新 (`autoupdate-full.bin`、`sysupgrade <イメージ>`) は
+  データ領域も書き直すので問題にならないが、rootfs だけを入れ替える更新 (`sysupgrade -r`) では古い写しが残る
+
 確認 (2026-11-22、試作イメージ `v2.2.0-1-g98451b5`、1 台): ssh で `firstboot -f -e` (データ領域を消して再起動) → 1 分半ほどで
 同じホスト名・同じ IP で LAN に戻り、`wifi-from-sd` と `keys-from-sd` が適用、lapcam / osd-config / rec-led が起動。
-| ストリームキー、OSD の設定、ロゴ、録画、lapcam のプロファイル | カード上なので残る |
 
 ## 注意
 

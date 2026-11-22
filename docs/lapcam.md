@@ -138,8 +138,8 @@ ssh root@<camera-ip> '/etc/init.d/S97lapcam stop; rm /etc/init.d/S97lapcam /mnt/
 ```
 
 lapcam を止めた時点で uhttpd が起動し直す (S97lapcam の stop がそうする)。`lapcam.json` (プロファイル) は SD に残る。
-Thingino の UI のファイル (`/var/www`) には何も変えていない。工場出荷状態に戻した場合も overlay が消えるので
-Thingino の UI に戻る。
+Thingino の UI のファイル (`/var/www`) には何も変えていない。手で入れた個体は、工場出荷状態に戻した場合も overlay が消えるので
+Thingino の UI に戻る (lapcam のファームウェアの個体は `S97lapcam` が rootfs に入っているので、戻しても lapcam のまま)。
 
 旧 Thingino UI 向けに作った自前ページ (`device/www/` の YouTube Live と OSD Settings、Rec ボタンの agent adapter) は
 uhttpd が止まっているので使えないが、ファイルとインストーラは残してある (uhttpd を戻せば動く)。

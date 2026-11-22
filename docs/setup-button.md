@@ -47,7 +47,8 @@ Wyze Cam v3 の Setup ボタンは、Thingino では起動した後もいつで�
 詳細とログの見方は [recording.md](recording.md#本体のボタンのダブルクリックで開始停止-rec-button)。
 
 Wi-Fi が未設定で設定用ポータルになっている時 (`/run/portal_mode`) も、録画、録画中の赤 LED (`rec-led`)、OSD (`osd-config`、`osd-feed`) は
-動く (v2.2.0 まではこの 3 つを止めていた)。ネットワークが要る配信 (`youtube-relay`) と `beacon` は動かない。
+動く (v2.2.0 まではこの 3 つを止めていた)。ネットワークが要る配信 (`youtube-relay`) と `beacon` は動かない。この状態では時計を合わせられない (NTP に届かない) ので、
+カメラの時計はファームウェアを作った日時から進み、録画のフォルダとファイル名、OSD の時計もその日時になる。
 
 ## Wi-Fi AP (5 秒)
 

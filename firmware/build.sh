@@ -28,6 +28,10 @@ REPO=$(cd "$HERE/.." && pwd)
 IMAGE=ghcr.io/themactep/thingino-builder-image:latest
 DL_CACHE=thingino-dl-cache
 
+if [ "${PACK_ONLY:-0}" != 0 ]; then
+	echo "PACK_ONLY is gone (lapcam's files are in the rootfs now): run without it; the incremental build takes a minute or two" >&2
+	exit 1
+fi
 if [ -z "$TREE" ] || [ ! -f "$TREE/Makefile" ]; then
 	echo "Usage: $0 <thingino-firmware dir> [camera]" >&2
 	exit 1
@@ -45,11 +49,6 @@ fi
 if ! docker ps -a --format '{{.Names}}' | grep -qx "$DL_CACHE"; then
 	echo "the download cache container '$DL_CACHE' is missing; in $TREE run:" >&2
 	echo "  WORKFLOW=1 make -f Makefile.container container-pull    (docs/build.md, step 1)" >&2
-	exit 1
-fi
-
-if [ -n "$PACK_ONLY" ]; then
-	echo "PACK_ONLY is gone (lapcam's files are in the rootfs now): run without it; the incremental build takes a minute or two" >&2
 	exit 1
 fi
 
@@ -136,8 +135,16 @@ echo "$build_id" >"$REPO/dist/firmware/BUILD"
 # may have moved during a long build)
 sed -n 's/^VERSION=//p' "$OUT/target/etc/lapcam-release" >"$REPO/dist/firmware/VERSION"
 [ -s "$REPO/dist/firmware/VERSION" ] || { echo "no VERSION in $OUT/target/etc/lapcam-release" >&2; exit 1; }
-# the files must be in the rootfs image itself, not only in the target directory
-if ! "$OUT/host/bin/unsquashfs" -l "$OUT/images/rootfs.squashfs" 2>/dev/null | grep -q '/etc/lapcam-release$'; then
+# the files must be in the rootfs image itself, not only in the target
+# directory. unsquashfs is the build's own (host/bin), a binary made in the
+# builder container, so it is run there: on the host it may not start
+rel=${OUT#"$TREE"/}
+if ! listing=$(docker run --rm --user "$(id -u):$(id -g)" -v "$TREE":/workspace -w /workspace "$IMAGE" \
+	"/workspace/$rel/host/bin/unsquashfs" -l "/workspace/$rel/images/rootfs.squashfs"); then
+	echo "could not list $OUT/images/rootfs.squashfs with the build's unsquashfs (see the message above)" >&2
+	exit 1
+fi
+if ! printf '%s\n' "$listing" | grep -q '/etc/lapcam-release$'; then
 	echo "rootfs.squashfs has no /etc/lapcam-release: lapcam's files did not get into the rootfs (BR2_ROOTFS_OVERLAY in user/$CAMERA/local.fragment?)" >&2
 	exit 1
 fi
