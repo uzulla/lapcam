@@ -48,20 +48,21 @@ const noWifiAPMark = "lapcam-no-wifi-ap"
 // while the config file is read and rewritten. Going to the access point
 // wifi-ap swaps the file for a moment and puts back the copy it took: a save
 // in between would be lost after it was reported as saved.
-var wifiAPLock = "/run/wifi-ap.lock"
+var wifiAPLock = "/run/wifi-ap.flock"
 
-// lockWifi - ok is false while wifi-ap holds the lock. Where the file cannot
-// be opened (no /run: not a camera) there is no wifi-ap to collide with.
-func lockWifi() (unlock func(), ok bool) {
+// lockWifi - an error while wifi-ap holds the lock, and also when the lock
+// cannot be taken at all (the file does not open): without it nothing keeps a
+// switch from starting under the save.
+func lockWifi() (unlock func(), err error) {
 	f, err := os.OpenFile(wifiAPLock, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return func() {}, true
+		return nil, fmt.Errorf("the Wi-Fi lock cannot be taken, nothing was changed: %v", err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
-		return nil, false
+		return nil, errors.New("the camera is switching between its Wi-Fi and the access point right now; save again in a few seconds")
 	}
-	return func() { _ = f.Close() }, true // closing drops the lock
+	return func() { _ = f.Close() }, nil // closing drops the lock
 }
 
 func emptyWifiOK() bool {
@@ -388,9 +389,9 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
-	unlock, ok := lockWifi()
-	if !ok {
-		return false, errors.New("the camera is switching between its Wi-Fi and the access point right now; save again in a few seconds")
+	unlock, err := lockWifi()
+	if err != nil {
+		return false, err
 	}
 	defer unlock()
 	s.setWifiNote("") // a new save; the last undo notice is history
@@ -518,9 +519,9 @@ func (s *server) wifiWatch(previous, sd string, gen int) {
 	}
 	// wifi-ap is switching (the button): the access point is the way to fix
 	// the networks now, and its swap of the file must not be written into
-	unlock, ok := lockWifi()
-	if !ok {
-		log.Printf("wifi: the last save did not reconnect, but the camera is switching Wi-Fi mode: not undone")
+	unlock, err := lockWifi()
+	if err != nil {
+		log.Printf("wifi: the last save did not reconnect, but it is not undone: %v", err)
 		return
 	}
 	defer unlock()

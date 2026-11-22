@@ -196,8 +196,9 @@ fi
 # wifi.go); the kernel drops it when the holder exits, however that happens.
 # The daemons started below must not inherit the descriptor (they would keep
 # the lock for good): every command that starts one closes it (9>&-).
-LOCK=/run/wifi-ap.lock
-if [ -L "$LOCK" ] || [ -d "$LOCK" ]; then rm -rf "$LOCK"; fi # not a file: nothing of ours
+# The file is never removed or replaced (a run holding the old one and a run
+# on a new one would both go ahead).
+LOCK=/run/wifi-ap.flock
 exec 9>"$LOCK"
 if ! flock -n 9; then
 	log "another switch or a Wi-Fi save is running, nothing to do"

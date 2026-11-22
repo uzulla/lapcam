@@ -216,9 +216,9 @@ func TestWifiSaveNeedsOnePSKNetwork(t *testing.T) {
 	if err := os.WriteFile(init, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	old, oldInit := wpaConf, wifiInit
-	wpaConf, wifiInit = path, init
-	t.Cleanup(func() { wpaConf, wifiInit = old, oldInit })
+	old, oldInit, oldLock := wpaConf, wifiInit, wifiAPLock
+	wpaConf, wifiInit, wifiAPLock = path, init, filepath.Join(t.TempDir(), "wifi-ap.flock")
+	t.Cleanup(func() { wpaConf, wifiInit, wifiAPLock = old, oldInit, oldLock })
 	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
 	if _, err := s.wifiSave([]wifiNet{{SSID: "Cafe", Open: true}}); err == nil || !strings.Contains(err.Error(), "WPA2 password") {
 		t.Fatalf("open-only list accepted: %v", err)
@@ -251,9 +251,9 @@ func TestWifiSaveEmptyList(t *testing.T) {
 	if err := os.WriteFile(init, []byte("#!/bin/sh\n# "+noWifiAPMark+": ...\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	oldConf, oldInit := wpaConf, wifiInit
-	wpaConf, wifiInit = path, init
-	t.Cleanup(func() { wpaConf, wifiInit = oldConf, oldInit })
+	oldConf, oldInit, oldLock := wpaConf, wifiInit, wifiAPLock
+	wpaConf, wifiInit, wifiAPLock = path, init, filepath.Join(dir, "wifi-ap.flock")
+	t.Cleanup(func() { wpaConf, wifiInit, wifiAPLock = oldConf, oldInit, oldLock })
 	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
 	applied, err := s.wifiSave(nil)
 	if err != nil || applied {
@@ -305,9 +305,9 @@ func TestWifiSaveRefusedWhileSwitching(t *testing.T) {
 	_ = syscall.Flock(int(held.Fd()), syscall.LOCK_UN)
 
 	// a save in progress keeps a switch out, and lets it in when done
-	unlock, ok := lockWifi()
-	if !ok {
-		t.Fatal("lock not free after the switch")
+	unlock, err := lockWifi()
+	if err != nil {
+		t.Fatalf("lock not free after the switch: %v", err)
 	}
 	if tryLock() {
 		t.Fatal("a switch could start during a save")
@@ -324,5 +324,21 @@ func TestWifiSaveRefusedWhileSwitching(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "Track") {
 		t.Fatalf("file not written:\n%s", b)
+	}
+
+	// a lock that cannot be taken at all (here: a directory in its place)
+	// refuses the save too, instead of saving unprotected
+	if err := os.WriteFile(path, []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wifiAPLock = filepath.Join(dir, "lockdir")
+	if err := os.Mkdir(wifiAPLock, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.wifiSave(nets); err == nil || !strings.Contains(err.Error(), "lock cannot be taken") {
+		t.Fatalf("saved without the lock: %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != conf {
+		t.Fatalf("file changed by the refused save:\n%s", b)
 	}
 }
