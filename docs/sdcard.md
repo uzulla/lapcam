@@ -75,7 +75,7 @@ Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (
 | `thingino-wyze_cam3_t31x_gc2053_atbm6031.bin` | 自前のイメージ (インストーラが探す名前)。`-u` では `autoupdate-full.bin` の名前で置く |
 | `lapcam` / `osd-feed` / `beacon` / `ffmpeg` | プログラム (`dist/` から) |
 | `lapcam.args` | `-listen :80` |
-| `wpa_supplicant.conf` | Wi-Fi (複数可)。`-w SSID PASS` で生成、または手で ([wifi-from-sd.md](wifi-from-sd.md))。無ければ設定用の AP (`lapcam-xxxx`、open、設定ページ http://172.16.0.1/) を開く |
+| `wpa_supplicant.conf` | Wi-Fi (複数可)。`-w SSID PASS` で生成、または手で ([wifi-from-sd.md](wifi-from-sd.md))。無ければカメラ自身の AP (`lapcam-xxxx`、open、設定ページ http://100.64.1.1/ の Wi-Fi タブ) で起動する (v2.3.0 までは Thingino の設定用ポータルで、http://172.16.0.1/) |
 | `authorized_keys` | SSH の公開鍵 (1 行 1 鍵)。`-a ~/.ssh/id_ed25519.pub` で置く (**カードのファイルを丸ごと置き換える**ので、使いたい鍵は全部そのファイルに入れておく。各行は `ssh-keygen` が読める鍵であることを検査する)。起動時に `S37keys-from-sd` が `/root/.ssh/authorized_keys` に写す (違う時だけ。カードが正)。焼くと `/root` は消えるので、これが無いと焼くたびに root / `root` で入って鍵を入れ直すことになる。手で入れた個体に後から足すのは `device/install-keys-from-sd.sh root@<ip> key.pub` (こちらはカードの鍵に追加する) |
 | `youtube-relay.json` | 配信設定。`-k ストリームキー` で生成、または lapcam の Stream タブで後から |
 | `prudynt-osd.json` / `osd-feed.json` | OSD の配置と内容 (レース用の雛形: ロゴ・G ボール・コース図・MEM/CPU・速度) |

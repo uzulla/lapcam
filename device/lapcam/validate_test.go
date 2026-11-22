@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -210,9 +211,14 @@ func TestWifiSaveNeedsOnePSKNetwork(t *testing.T) {
 	if err := os.WriteFile(path, []byte("ctrl_interface=/run/wpa_supplicant\nupdate_config=1\n\nnetwork={\n\tssid=\"Home\"\n\tpsk=\"home-pass\"\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := wpaConf
-	wpaConf = path
-	t.Cleanup(func() { wpaConf = old })
+	// a start-up script without the access point mark, whatever this machine has
+	init := filepath.Join(t.TempDir(), "S38wpa_supplicant")
+	if err := os.WriteFile(init, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, oldInit := wpaConf, wifiInit
+	wpaConf, wifiInit = path, init
+	t.Cleanup(func() { wpaConf, wifiInit = old, oldInit })
 	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
 	if _, err := s.wifiSave([]wifiNet{{SSID: "Cafe", Open: true}}); err == nil || !strings.Contains(err.Error(), "WPA2 password") {
 		t.Fatalf("open-only list accepted: %v", err)
@@ -260,5 +266,39 @@ func TestWifiSaveEmptyList(t *testing.T) {
 	// open-only is still refused: it would never be joined at boot
 	if _, err := s.wifiSave([]wifiNet{{SSID: "Cafe", Open: true}}); err == nil {
 		t.Fatal("open-only list accepted")
+	}
+}
+
+// no save while wifi-ap switches: its swap of the config file would undo it
+func TestWifiSaveRefusedWhileSwitching(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "wpa.conf")
+	conf := "ctrl_interface=/run/wpa_supplicant\n\nnetwork={\n\tssid=\"Home\"\n\tpsk=\"home-pass\"\n}\n"
+	if err := os.WriteFile(path, []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, "wifi-ap.lock")
+	oldConf, oldLock := wpaConf, wifiAPLock
+	wpaConf, wifiAPLock = path, lock
+	t.Cleanup(func() { wpaConf, wifiAPLock = oldConf, oldLock })
+	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
+	nets := []wifiNet{{SSID: "Home"}, {SSID: "Track", PSK: "track-pass"}}
+
+	if err := os.Symlink(strconv.Itoa(os.Getpid()), lock); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.wifiSave(nets); err == nil || !strings.Contains(err.Error(), "switching") {
+		t.Fatalf("saved during a switch: %v", err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != conf {
+		t.Fatalf("file changed by the refused save:\n%s", b)
+	}
+	// a lock left by a process that is gone does not block (pid 0 is never one)
+	_ = os.Remove(lock)
+	if err := os.Symlink("0", lock); err != nil {
+		t.Fatal(err)
+	}
+	if wifiSwitching() {
+		t.Fatal("a lock without a live owner counts as a switch")
 	}
 }

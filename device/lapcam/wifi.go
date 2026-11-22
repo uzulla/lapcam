@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -41,6 +42,21 @@ var wpaConf = "/etc/wpa_supplicant.conf"
 var wifiInit = "/etc/init.d/S38wpa_supplicant"
 
 const noWifiAPMark = "lapcam-no-wifi-ap"
+
+// wifiAPLock - wifi-ap's lock while it switches between the saved Wi-Fi and
+// the access point: a symlink whose target is its pid. Going to the access
+// point it swaps the config file for a moment and puts the copy it took
+// back, so a save in between would be lost after it was reported as saved.
+var wifiAPLock = "/run/wifi-ap.lock"
+
+func wifiSwitching() bool {
+	target, err := os.Readlink(wifiAPLock)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(target)
+	return err == nil && pid > 0 && syscall.Kill(pid, 0) == nil
+}
 
 func emptyWifiOK() bool {
 	b, err := os.ReadFile(wifiInit)
@@ -366,6 +382,9 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
+	if wifiSwitching() {
+		return false, errors.New("the camera is switching between its Wi-Fi and the access point right now; save again in a few seconds")
+	}
 	s.setWifiNote("") // a new save; the last undo notice is history
 	w, err := parseWPA(wpaConf)
 	if err != nil {
@@ -443,6 +462,8 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	backupOnce(wpaConf)
 	prevBytes, _ := os.ReadFile(wpaConf)
 	previous := string(prevBytes)
+	s.wifiGen++ // from here the file is this save's: an older save's undo must not write over it
+	gen := s.wifiGen
 	if err := writeText(wpaConf, text, 0o600); err != nil {
 		return false, err
 	}
@@ -464,7 +485,7 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 		return false, fmt.Errorf("saved, but wpa_supplicant did not reload: %v %s", err, out)
 	}
 	if wasUp && previous != "" {
-		go s.wifiWatch(previous, sd)
+		go s.wifiWatch(previous, sd, gen)
 	}
 	return true, nil
 }
@@ -472,8 +493,9 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 // wifiWatch - after a save that the camera was connected before: if it is
 // not connected again within 30 s (a typo in the only reachable network),
 // the previous file comes back and is loaded again, so the camera is not
-// lost until someone holds the button for the access point
-func (s *server) wifiWatch(previous, sd string) {
+// lost until someone holds the button for the access point. Not when another
+// save came after this one (gen): the file is that save's then.
+func (s *server) wifiWatch(previous, sd string, gen int) {
 	for i := 0; i < 30; i++ {
 		time.Sleep(time.Second)
 		if wifiStatus().State == "COMPLETED" {
@@ -483,6 +505,9 @@ func (s *server) wifiWatch(previous, sd string) {
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
+	if s.wifiGen != gen {
+		return
+	}
 	_ = writeText(wpaConf, previous, 0o600)
 	if sd != "" && exists(sd) {
 		_ = writeText(sd, previous, 0o644)

@@ -190,18 +190,27 @@ if [ -f /run/portal_mode ]; then
 	exit 0
 fi
 # one switch at a time: a second hold of the button while the first run still
-# waits would start the opposite switch under it (/run is empty after a boot;
-# a lock whose owner is gone is taken over)
+# waits would start the opposite switch under it. The lock is a symlink whose
+# target is the owner's pid: made in one step, so it never exists without its
+# owner showing. lapcam reads it too and takes no Wi-Fi save meanwhile (the
+# swap of the config file in to_ap would undo it). /run is empty after a boot;
+# a lock whose owner is gone is taken over.
 LOCK=/run/wifi-ap.lock
-if ! mkdir "$LOCK" 2>/dev/null; then
-	owner=$(cat "$LOCK/pid" 2>/dev/null)
+# (a directory there is not a lock: ln would put the link inside it and succeed)
+[ -d "$LOCK" ] && [ ! -L "$LOCK" ] && rm -rf "$LOCK"
+if ! ln -s "$$" "$LOCK" 2>/dev/null; then
+	owner=$(readlink "$LOCK" 2>/dev/null)
 	if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
 		log "another switch is still running (pid $owner), nothing to do"
 		exit 0
 	fi
+	rm -rf "$LOCK"
+	if ! ln -s "$$" "$LOCK" 2>/dev/null; then
+		log "another switch has just started, nothing to do"
+		exit 0
+	fi
 fi
-echo $$ >"$LOCK/pid"
-trap 'rm -rf "$LOCK"' EXIT
+trap '[ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ] && rm -f "$LOCK"' EXIT
 trap 'exit 1' INT TERM HUP
 
 is_ap=0
