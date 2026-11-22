@@ -223,9 +223,42 @@ func TestWifiSaveNeedsOnePSKNetwork(t *testing.T) {
 	if _, err := s.wifiSave([]wifiNet{{SSID: "New", PSK: "short"}}); err == nil {
 		t.Fatal("7-character password accepted")
 	}
+	if _, err := s.wifiSave(nil); err == nil || !strings.Contains(err.Error(), "at least one network must stay") {
+		t.Fatalf("empty list accepted on a firmware without the access point start-up: %v", err)
+	}
 	// the file was not touched by the refused saves
 	b, _ := os.ReadFile(path)
 	if !strings.Contains(string(b), `psk="home-pass"`) || strings.Contains(string(b), "Cafe") {
 		t.Fatalf("file changed by a refused save:\n%s", b)
+	}
+}
+
+// an empty list is saved on a firmware whose Wi-Fi start-up turns "no saved
+// network" into the access point; nothing in the file may look like a network
+func TestWifiSaveEmptyList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "wpa.conf")
+	if err := os.WriteFile(path, []byte("# ssid= and psk= of home\nctrl_interface=/run/wpa_supplicant\nupdate_config=1\n\nnetwork={\n\tssid=\"Home\"\n\tpsk=\"home-pass\"\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	init := filepath.Join(dir, "S38wpa_supplicant")
+	if err := os.WriteFile(init, []byte("#!/bin/sh\n# "+noWifiAPMark+": ...\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldConf, oldInit := wpaConf, wifiInit
+	wpaConf, wifiInit = path, init
+	t.Cleanup(func() { wpaConf, wifiInit = oldConf, oldInit })
+	s := &server{sd: t.TempDir(), relay: newRelay(t.TempDir())}
+	applied, err := s.wifiSave(nil)
+	if err != nil || applied {
+		t.Fatalf("empty list: applied=%v err=%v", applied, err)
+	}
+	b, _ := os.ReadFile(path)
+	if strings.Contains(string(b), "ssid=") || strings.Contains(string(b), "psk=") || !strings.Contains(string(b), "ctrl_interface=/run/wpa_supplicant") {
+		t.Fatalf("file after an empty save:\n%s", b)
+	}
+	// open-only is still refused: it would never be joined at boot
+	if _, err := s.wifiSave([]wifiNet{{SSID: "Cafe", Open: true}}); err == nil {
+		t.Fatal("open-only list accepted")
 	}
 }

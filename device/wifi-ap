@@ -62,6 +62,11 @@ to_ap() {
 
 	# stop while the config still says "client", so the client-mode teardown runs
 	sh "$INIT" stop >/dev/null 2>&1
+	# a file without a saved network counts as "access point" on the lapcam
+	# firmware (it starts as one then): that stop leaves the DHCP client and
+	# its address behind
+	[ -f /var/run/udhcpc.wlan0.pid ] && kill "$(cat /var/run/udhcpc.wlan0.pid)" 2>/dev/null
+	ip addr flush dev wlan0 2>/dev/null
 
 	# S38wpa_supplicant picks the mode from the file: ssid= and psk= present (the
 	# psk= here is a comment: an open network has none, but without the word it
@@ -116,10 +121,11 @@ to_sta() {
 		log "found the access point config in $CONF; restoring $KEEP first"
 		{ cp "$KEEP" "$CONF.tmp" && mv "$CONF.tmp" "$CONF" && sync; } || fail "could not restore $CONF from $KEEP (card or overlay full?); staying an access point"
 	fi
-	# without both words S38wpa_supplicant would start Thingino's setup portal
-	# (and overwrite the file)
+	# without both words S38wpa_supplicant takes the file for "no Wi-Fi saved":
+	# the access point again on the lapcam firmware, Thingino's setup portal on
+	# a plain one
 	if ! grep -q 'ssid=' "$CONF" 2>/dev/null || ! grep -q 'psk=' "$CONF" 2>/dev/null; then
-		fail "$CONF has no network with a password; staying an access point (add one in the Wi-Fi tab first)"
+		fail "$CONF has no network with a password; staying an access point (add one in the Wi-Fi tab first: $URL)"
 	fi
 
 	log "leaving the access point for the saved Wi-Fi"

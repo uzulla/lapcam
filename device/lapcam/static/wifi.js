@@ -102,7 +102,10 @@
     try {
       const r = await api("/api/wifi/networks", { networks: edit.map((n) => ({ ssid: n.ssid, priority: n.priority, open: !!n.open, psk: n.psk || undefined })) });
       saving = false;
-      setMsg(r.applied ? "Saved. The camera reloaded its network list." : "Saved. The camera is an access point now; it joins these networks when you hold its button 5 s again, or after a reboot (Camera tab, bottom).");
+      setMsg(r.applied ? "Saved. The camera reloaded its network list."
+        : r.empty && r.ap_mode ? "Saved. No network is left: the camera stays an access point, also after a restart, until one is added here."
+        : r.empty ? "Saved. No network is left: the camera stays on this Wi-Fi until it restarts or its button is held 5 s; from then on it is an access point named like the camera (http://100.64.1.1/)."
+        : "Saved. The camera is an access point now; it joins these networks when you hold its button 5 s again, or after a reboot (Camera tab, bottom).");
       await load();
     } catch (err) { saving = false; setMsg(err.message, true); render(); }
   });

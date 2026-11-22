@@ -33,6 +33,20 @@ const (
 // wpaConf - the config wpa_supplicant runs with (a variable: tests use a temp file)
 var wpaConf = "/etc/wpa_supplicant.conf"
 
+// wifiInit - Thingino's Wi-Fi start-up script. The lapcam firmware patches it
+// (patches/thingino-wifi-portal-ssid.diff, marked with noWifiAPMark): a camera
+// without a saved network then starts as the access point of wifi-ap, where
+// this app's Wi-Fi tab adds one. Without the patch such a camera starts
+// Thingino's setup portal instead, so the last network cannot be removed.
+var wifiInit = "/etc/init.d/S38wpa_supplicant"
+
+const noWifiAPMark = "lapcam-no-wifi-ap"
+
+func emptyWifiOK() bool {
+	b, err := os.ReadFile(wifiInit)
+	return err == nil && strings.Contains(string(b), noWifiAPMark)
+}
+
 type wifiNet struct {
 	SSID     string   `json:"ssid"`
 	Priority int      `json:"priority"`
@@ -342,10 +356,13 @@ func unescapeWPA(s string) string {
 // wpa_supplicant re-read them. applied is false when the camera is an access
 // point (wifi-ap / portal): the running supplicant holds the AP config then,
 // and a reconfigure would drop the phone; the file waits until wifi-ap
-// leaves the access point (the button again) or the reboot.
+// leaves the access point (the button again) or the reboot. An empty list
+// (only on a firmware that starts as an access point then, emptyWifiOK) is
+// not applied either: the camera stays where it is until the button or a
+// restart, instead of dropping off the network under the browser.
 func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
-	if len(nets) == 0 {
-		return false, errors.New("at least one network must stay (or the camera falls into portal mode at the next boot)")
+	if len(nets) == 0 && !emptyWifiOK() {
+		return false, errors.New("at least one network must stay: this camera's firmware would start Thingino's setup portal without one (a newer lapcam firmware starts as its own access point instead)")
 	}
 	s.relay.mu.Lock()
 	defer s.relay.mu.Unlock()
@@ -402,10 +419,22 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 			hasPSK = true
 		}
 	}
-	if !hasPSK {
-		return false, errors.New("at least one network with a WPA2 password must stay: the camera's Wi-Fi start-up treats a list without one as unset and opens the setup portal")
+	if !hasPSK && len(nets) > 0 {
+		return false, errors.New("at least one network with a WPA2 password must stay: the camera's Wi-Fi start-up treats a list without one as unset and joins nothing")
 	}
 	w.nets = nets
+	if len(nets) == 0 {
+		// the Wi-Fi start-up only greps the file for "ssid=" and "psk=": a
+		// comment with both words would pass for a saved network, and the
+		// camera would start as a client of nothing
+		kept := w.header[:0:0]
+		for _, l := range w.header {
+			if !strings.Contains(l, "ssid=") && !strings.Contains(l, "psk=") {
+				kept = append(kept, l)
+			}
+		}
+		w.header = kept
+	}
 	text, err := w.render(psks)
 	if err != nil {
 		return false, err
@@ -426,6 +455,9 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	}
 	if exists("/run/wlan_ap_mode") || exists("/run/portal_mode") {
 		return false, nil // the access point stays up; the saved networks come when wifi-ap leaves it, or with the reboot
+	}
+	if len(nets) == 0 {
+		return false, nil
 	}
 	wasUp := wifiStatus().State == "COMPLETED"
 	if out, err := wpaCli("reconfigure"); err != nil || !strings.Contains(out, "OK") {
@@ -547,5 +579,8 @@ func (s *server) handleWifiSet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "applied": applied})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "applied": applied, "empty": len(body.Networks) == 0,
+		"ap_mode": exists("/run/wlan_ap_mode") || exists("/run/portal_mode"),
+	})
 }

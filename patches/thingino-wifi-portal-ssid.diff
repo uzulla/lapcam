@@ -1,8 +1,36 @@
 diff --git a/package/wifi/files/S38wpa_supplicant.in b/package/wifi/files/S38wpa_supplicant.in
-index da14ebe7f..2516c830d 100644
+index da14ebe..ec3bb48 100644
 --- a/package/wifi/files/S38wpa_supplicant.in
 +++ b/package/wifi/files/S38wpa_supplicant.in
-@@ -222,7 +222,7 @@ prepare_portal() {
+@@ -54,6 +54,27 @@ else
+ 	mode="client"
+ fi
+ 
++# lapcam-no-wifi-ap: a camera without a saved Wi-Fi does not open the setup
++# portal. It comes up as the open access point that the button gives
++# (wifi-ap: named like the camera, $WLANAP_IP), where lapcam's Wi-Fi tab adds
++# a network and the button leaves for it. The access point's config lives in
++# tmpfs: the saved file is left as it is.
++if [ "$mode" = "portal" ]; then
++	mode="ap"
++	CONFIG="/run/$DAEMON_SHORT.ap.conf"
++	cat >"$CONFIG" <<-WPAEOF
++		ctrl_interface=/run/wpa_supplicant
++		ap_scan=2
++
++		network={
++			ssid="$hostname"
++			mode=2
++			frequency=2412
++			key_mgmt=NONE
++		}
++	WPAEOF
++fi
++
+ case "$mode" in
+ 	portal | ap)
+ 		IFACE="$AP_IFACE"
+@@ -222,7 +243,7 @@ prepare_portal() {
  		ap_scan=2
  
  		network={

@@ -44,8 +44,8 @@ Thingino のビルドには `user/<camera>/` という「ユーザー層」が�
 | `rootfs/` | **rootfs (読み取り専用の squashfs) に入れるファイル** (`local.fragment` の `BR2_ROOTFS_OVERLAY` に足す。v2.2.0 まではデータ領域の初期内容 `overlay/` だった: 下の「データ領域が消えた時」)。`/etc/lapcam-release` (版: [release.md](release.md))、起動スクリプト S37wifi-from-sd / S37keys-from-sd / S93osd-config / S93youtube-relay / S94osd-feed / S95beacon / S96rec-led / S97lapcam、`/usr/sbin` の osd-config / youtube-relay / rec-led / rec-button / wifi-ap、ボタン設定 (ダブルクリックで録画、5 秒で AP)、agent adapter (録画引数の修正入り)、ホスト名 `lapcam-xxxx` (Thingino の `S04hostname` を既定名 `lapcam` に差し替え、rootfs の初期名 `ing-wyze-cam3` とそこから作られた `ing-wyze-cam3-xxxx` も「自動で付いた名前」として付け直すようにしたもの。xxxx は SoC から作る基準 MAC の末尾 4 桁。Wi-Fi の MAC はそれに 1 を足した値なので一致しない。手で付けた名前は残す (`ing-wyze-cam3-` に 16 進 4 桁が続く名前だけは、Thingino が自動で付けたものと区別できないので付け直す)。設定用 AP と 5 秒長押しの AP はホスト名をそのまま名前にする)、mDNS の `_lapcam._tcp`、タイムゾーン (既定 Asia/Tokyo、`LAPCAM_TIMEZONE` / `LAPCAM_TZ` で変更) |
 
 パッチは [build.md](build.md) で手で当てていたもの (ffmpeg の RTMPS と chunk size、prudynt の OSD と警告抑止、
-agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wifi-portal-ssid.diff`: Wi-Fi 未設定時に開く
-設定用 AP の名前を `THINGINO-xxxx` からホスト名 `lapcam-xxxx` に) を足して prepare.sh が当てる。パッチの内容が変わった時は、
+agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wifi-portal-ssid.diff`: Wi-Fi が 1 つも保存されていない時、Thingino の
+設定用ポータルではなく [`wifi-ap` と同じ AP](lapcam.md#wi-fi-が-1-つも保存されていない時) `lapcam-xxxx` で起動する) を足して prepare.sh が当てる。パッチの内容が変わった時は、
 当たっていた古い版を `git checkout` で戻してから当て直す (対象ファイルはこのリポジトリのパッチしか触らない前提)。新たに当たった (または中身が変わった)
 パッチのパッケージと、`prudynt.json` が変わったときの prudynt-t は `user/<camera>/.rebuild` に記録され、build.sh が
 `make rebuild-<pkg>` する (Buildroot はパッケージディレクトリのファイル変更を見ないし、`prudynt.json` は prudynt-t の
@@ -211,7 +211,8 @@ sh firmware/make-sdcard_test.sh          # 偽の dist/ と一時ディレクト
 - 2026-11-10: イメージをビルド (BUILD_ID `ciao+da40db6`、rootfs 5648 KB / 5696 KB、データ領域に overlay 20 ファイル)。
   公式インストーラの SD イメージ (`wyze-cam-3-sd.zip`、2026-08-15 版) を展開し、initramfs の `init` を読んで
   上の「しくみ」を確認した。`fatextract.py` の出力は macOS で mount した結果と md5 が一致。
-- Wi-Fi 未設定で起きる設定用 AP (`lapcam-xxxx`、172.16.0.1) の中では、Thingino のポータル用 uhttpd が 80 番で上がった後に
+- (v2.3.0 まで。次の版からは Wi-Fi 未設定でも設定用ポータルにはならず、`wifi-ap` と同じ AP で起動する:
+  [lapcam.md](lapcam.md#wi-fi-が-1-つも保存されていない時)) Wi-Fi 未設定で起きる設定用 AP (`lapcam-xxxx`、172.16.0.1) の中では、Thingino のポータル用 uhttpd が 80 番で上がった後に
   S97lapcam がそれを止めて lapcam が 80 番を取る (S97lapcam の設計どおり)。スマホの「ネットワークにサインイン」の
   自動表示は lapcam のサインイン画面になる。lapcam の Wi-Fi タブで保存して再起動すれば接続できるはずだが、
   **この経路は未検証**。確実なのは SD に `wpa_supplicant.conf` を置くこと。

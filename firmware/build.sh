@@ -135,6 +135,11 @@ echo "$build_id" >"$REPO/dist/firmware/BUILD"
 # may have moved during a long build)
 sed -n 's/^VERSION=//p' "$OUT/target/etc/lapcam-release" >"$REPO/dist/firmware/VERSION"
 [ -s "$REPO/dist/firmware/VERSION" ] || { echo "no VERSION in $OUT/target/etc/lapcam-release" >&2; exit 1; }
+# lapcam's Wi-Fi tab lets the last network go only when it finds this mark
+grep -q 'lapcam-no-wifi-ap' "$OUT/target/etc/init.d/S38wpa_supplicant" || {
+	echo "$OUT/target/etc/init.d/S38wpa_supplicant lacks the access point start-up of patches/thingino-wifi-portal-ssid.diff (the wifi package was not rebuilt?)" >&2
+	exit 1
+}
 # the files must be in the rootfs image itself, not only in the target
 # directory. unsquashfs is the build's own (host/bin), a binary made in the
 # builder container, so it is run there: on the host it may not start

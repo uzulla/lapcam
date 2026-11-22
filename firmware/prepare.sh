@@ -11,8 +11,9 @@
 #     hand: RTMPS in ffmpeg (patches/thingino-ffmpeg-rtmps.diff on the .mk and
 #     the RTMP chunk-size patch), the text/image OSD and the msgChannel warning
 #     fix in prudynt, the record-argument fix of the agent adapter - and one
-#     more for the image: the setup portal's Wi-Fi network is named like the
-#     camera (lapcam-xxxx), not THINGINO-xxxx (patches/thingino-wifi-portal-ssid.diff).
+#     more for the image: a camera without a saved Wi-Fi starts as the open
+#     access point of wifi-ap (lapcam-xxxx, 100.64.1.1) with lapcam's UI, not as
+#     Thingino's setup portal (patches/thingino-wifi-portal-ssid.diff).
 #
 #  2. user/<camera>/ is written - Thingino's "user layer", baked into the image
 #     by its Makefile (see docs/build/local-build-settings.md in the tree):
@@ -138,9 +139,12 @@ put_patch "$REPO/patches/thingino-ffmpeg-rtmp-chunk-size.diff" package/thingino-
 put_patch "$REPO/patches/prudynt-osd-textfile.diff" package/prudynt-t/0001-osd-textfile.patch prudynt-t
 put_patch "$REPO/patches/prudynt-msgchannel-warning.diff" package/prudynt-t/0002-msgchannel-warning.patch prudynt-t
 apply_diff "$REPO/patches/thingino-agent-adapter-record-args.diff" prudynt-t
-# the setup portal's access point (a camera without Wi-Fi settings opens one
-# at boot) is named like the camera (its hostname, lapcam-xxxx) instead of
-# THINGINO-<4 hex of the MAC>
+# a camera without a saved Wi-Fi starts as the access point of wifi-ap (open,
+# named like the camera, 100.64.1.1) instead of Thingino's setup portal: the
+# button and lapcam's Wi-Fi tab work there the same as after a 5-second hold,
+# and the last network can be removed in the tab (lapcam looks for the
+# patch's mark "lapcam-no-wifi-ap" in the script). The portal's own network
+# name (not reached any more) is the hostname too, not THINGINO-<4 hex>
 apply_diff "$REPO/patches/thingino-wifi-portal-ssid.diff" wifi
 
 # The image's BUILD_ID is "<branch>+<hash>" (e.g. ciao+da40db6); device/common.sh
