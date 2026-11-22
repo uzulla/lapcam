@@ -35,9 +35,13 @@ case "$port" in "" | 80) URL="http://$AP_IP/" ;; *) URL="http://$AP_IP:$port/" ;
 
 log() { logger -p daemon.info -t wifi-ap "$1"; }
 
+# play's helper lives until the sound is over: with the lock's descriptor
+# (below) it would hold the lock a few seconds longer than the switch
+say() { play "$1" >/dev/null 2>&1 9>&-; }
+
 fail() {
 	logger -p daemon.err -t wifi-ap "$1"
-	play /usr/share/sounds/configurationportalisdown.opus >/dev/null 2>&1
+	say /usr/share/sounds/configurationportalisdown.opus
 	exit 1
 }
 
@@ -115,7 +119,7 @@ EOF
 		if wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
 			if [ "$restored" = 1 ]; then
 				log "access point '$SSID' is up: $URL (hold the button 5 s again, or reboot, to return to the saved Wi-Fi)"
-				play /usr/share/sounds/configurationportalisup.opus >/dev/null 2>&1
+				say /usr/share/sounds/configurationportalisup.opus
 				exit 0
 			fi
 			fail "access point '$SSID' is up ($URL), but the saved networks are not back in $CONF: restore $KEEP by hand before rebooting"
@@ -124,7 +128,7 @@ EOF
 		i=$((i + 1))
 	done
 	logger -p daemon.err -t wifi-ap "access point did not come up (see logread); hold the button 5 s again, or reboot, to get the saved Wi-Fi back"
-	play /usr/share/sounds/configurationportalisdown.opus >/dev/null 2>&1
+	say /usr/share/sounds/configurationportalisdown.opus
 	exit 1
 }
 
@@ -170,7 +174,7 @@ to_sta() {
 	while [ $i -lt 30 ]; do
 		if wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
 			log "joined '$(wpa_cli -i wlan0 status 2>/dev/null | sed -n 's/^ssid=//p')'"
-			play /usr/share/sounds/wificonnected.opus >/dev/null 2>&1
+			say /usr/share/sounds/wificonnected.opus
 			exit 0
 		fi
 		sleep 1
@@ -180,7 +184,7 @@ to_sta() {
 		fail "wpa_supplicant did not start (see logread); hold the button 5 s again for the access point, or reboot"
 	fi
 	log "no saved Wi-Fi joined yet; the camera keeps trying (hold the button 5 s again for the access point)"
-	play /usr/share/sounds/wificonnectionfailed.opus >/dev/null 2>&1
+	say /usr/share/sounds/wificonnectionfailed.opus
 	exit 0
 }
 
