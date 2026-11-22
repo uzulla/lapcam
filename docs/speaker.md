@@ -3,8 +3,8 @@
 Wyze Cam v3 のスピーカーは、Thingino では **prudynt が鳴らす**。シェルからは `play` (音声ファイルを鳴らす) と
 `tell` (文章を読み上げる) で使う。どちらも Thingino に最初から入っているもので、このリポジトリは変えていない。
 lapcam のファームウェアで鳴るのは、本体ボタンの 1 回押しでの IP の読み上げ (`tell %ip`)、ボタンの合図のチャイム、
-ダブルクリックでの録画の開始・停止の音声 ([setup-button.md](setup-button.md))、`wifi-ap` が AP を立てられなかった時の
-"configuration portal is down" ([lapcam.md](lapcam.md))。
+ダブルクリックでの録画の開始・停止の音声 ([setup-button.md](setup-button.md))、`wifi-ap` の切り替えの音声
+(AP が上がった / 立てられなかった、Wi-Fi につながった / つながらない。[lapcam.md](lapcam.md))。
 
 ## 仕組み
 

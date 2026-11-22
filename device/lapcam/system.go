@@ -34,7 +34,7 @@ type status struct {
 	Relay     relaySt  `json:"relay"`
 	Recording recState `json:"recording"`
 	Image     image    `json:"image"`
-	APMode    bool     `json:"ap_mode"` // the camera is an access point (wifi-ap / Thingino portal) until reboot
+	APMode    bool     `json:"ap_mode"` // the camera is an access point (wifi-ap, until the button is held again or a reboot / Thingino portal)
 	Versions  versions `json:"versions"`
 	Errors    []string `json:"errors,omitempty"`
 }

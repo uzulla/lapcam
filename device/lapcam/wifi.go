@@ -341,7 +341,8 @@ func unescapeWPA(s string) string {
 // wifiSave - the new list of networks: write the config file(s) and make
 // wpa_supplicant re-read them. applied is false when the camera is an access
 // point (wifi-ap / portal): the running supplicant holds the AP config then,
-// and a reconfigure would drop the phone; the file waits for the reboot.
+// and a reconfigure would drop the phone; the file waits until wifi-ap
+// leaves the access point (the button again) or the reboot.
 func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 	if len(nets) == 0 {
 		return false, errors.New("at least one network must stay (or the camera falls into portal mode at the next boot)")
@@ -424,7 +425,7 @@ func (s *server) wifiSave(nets []wifiNet) (applied bool, err error) {
 		}
 	}
 	if exists("/run/wlan_ap_mode") || exists("/run/portal_mode") {
-		return false, nil // the access point stays up; the saved networks come with the reboot
+		return false, nil // the access point stays up; the saved networks come when wifi-ap leaves it, or with the reboot
 	}
 	wasUp := wifiStatus().State == "COMPLETED"
 	if out, err := wpaCli("reconfigure"); err != nil || !strings.Contains(out, "OK") {

@@ -50,15 +50,28 @@ Thingino が機体の名前から決めている 3 つ (ホスト名、mDNS、�
 ## つながらない時: 本体ボタン 5 秒長押しでカメラが Wi-Fi (AP) を出す (`wifi-ap`)
 
 サーキットで保存済みの Wi-Fi が無い時のリカバリ用。本体のボタンを **5 秒押し続け (チャイムが鳴る) て離す**と、
-カメラが**パスワード無しのアクセスポイント `lapcam`** になる。スマホをそれにつなぎ、`http://100.64.1.1/` を
-開いて Wi-Fi タブで設定を直し (AP の間は保存だけで、適用は再起動時)、Camera 画面一番下の **Reboot camera** で再起動すると、
-保存済みの Wi-Fi に戻る。
+カメラが**パスワード無しのアクセスポイント `lapcam-xxxx`** (ホスト名と同じ名前) になる。スマホをそれにつなぎ、`http://100.64.1.1/` を
+開いて Wi-Fi タブで設定を直す (AP の間は保存だけ)。**もう一度 5 秒長押しする**と、再起動せずに保存済みの Wi-Fi (直した内容) に戻る。
+Camera 画面一番下の **Reboot camera** での再起動でも戻る。
 AP になっている間は Camera 画面の上に黄色い帯が出る。自動では AP にならず、AP から自動で戻ることもしない (ユーザーの決定)。
+戻った先の Wi-Fi につながらない時 (設定の間違いなど) もカメラは探し続けるだけなので、もう一度 5 秒長押しで AP にして直す。
+音は、AP が上がると "configuration portal is up"、保存済みの Wi-Fi につながると "Wi-Fi connected"、戻って 30 秒たっても
+つながらないと "Wi-Fi connection failed" (その後も探し続ける)。どれもカメラ内の音声ファイルで、インターネットは要らない。
+スマホの Wi-Fi 一覧に `lapcam-xxxx` が出ているかでも分かる。
 
 - Thingino の `S38wpa_supplicant` は設定ファイルに `mode=2` があると AP として起動する (100.64.1.1/24、DHCP、DNS)。
   `wifi-ap` はクライアントとして止めてから一時的に AP の設定を書いて起動し、直後に保存済みの設定ファイルを戻す
   (保存済みの設定は `/etc/wpa_supplicant.conf.station` にも残す)。なので再起動すれば元通り。/etc への書き込みは
   2 回で、その数秒の間に電源が落ちたら `.station` を手で戻す
+- AP から戻る時 (`wifi-ap` が `/run/wlan_ap_mode` を見て向きを決める) は、AP の DHCP / DNS と wpa_supplicant を止めて
+  100.64.1.1 を外し、クライアントとして起動し直して DHCP を取り直す (`ifdown -f wlan0` → 起動 → `ifup wlan0`)。
+  設定ファイルはもう保存済みのネットワークなので、何も書かない。配信 (`youtube-relay`) はデフォルトルートが戻るのを
+  待って自分で再開する。30 秒待ってつながったかどうかをログに書く。手で向きを決めるなら `wifi-ap ap` / `wifi-ap sta`。
+  Thingino の設定ポータル (`/run/portal_mode`: Wi-Fi が 1 つも保存されていない) の時は何もしない。
+  2026-11-22、v2.3.0 の個体 (ATBM6031) で `wifi-ap ap` → 40 秒 → `wifi-ap sta` を ssh から 1 往復させて確認した:
+  AP は 3 秒で上がり、戻りは 5 秒で元の Wi-Fi に同じアドレスでつながり、配信は ffmpeg が 1 回落ちて 20 秒ほどで
+  開始し直した。同じ日に、本体ボタンの 5 秒長押しでの往復と、音 ("configuration portal ..."、"Wi-Fi connected") が
+  鳴ることも確認した。AP の間に Wi-Fi タブで書き換えた内容で戻ることは未確認
 - Thingino 既定の 5 秒長押しは「Wi-Fi 設定を消して再起動」(その後は Thingino の設定ポータル) で、保存した
   ネットワークが消える。ファームウェアはボタン設定でこれを `wifi-ap` に差し替えてある (素の Thingino なら
   `device/install-wifi-ap.sh root@<camera-ip>` が同じことをする)
@@ -66,7 +79,7 @@ AP になっている間は Camera 画面の上に黄色い帯が出る。自動
 - SD の `uenv.txt` に Thingino 標準の `wlan_ssid=` / `wlan_pass=` があると、Wi-Fi の起動処理がそれで設定を上書きして AP が
   立たないので、`wifi-ap` はその場合は何もせず音 ("portal is down") とログで知らせる。保存済みの設定を戻せなかった時も同じ
   (再起動すると AP のままになるので、`/etc/wpa_supplicant.conf.station` を手で戻す)
-- 配信は AP の間は当然止まる (インターネットが無い)。再起動で戻る
+- 配信は AP の間は当然止まる (インターネットが無い)。保存済みの Wi-Fi に戻れば再開する
 - ログ: `logread | grep wifi-ap`。AP が上がらなかった時は "configuration portal is down" の音声が鳴る
 
 ## 仕組み

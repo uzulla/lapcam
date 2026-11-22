@@ -53,7 +53,7 @@
     save.disabled = saving || !changed;
     save.textContent = saving ? "Saving…" : confirmSave ? (removesCurrent ? "Tap again: this removes the network you are on" : "Tap again to save") : (changed ? "Save and apply" : "No changes");
     save.className = "primary" + (confirmSave && !saving ? " confirm" : "");
-    $("wifi-sdnote").textContent = (data.sd_copy ? "The SD card's wpa_supplicant.conf is updated too. " : "") + (data.ap_mode ? "Access point mode: the list is saved now and used after the reboot." : "");
+    $("wifi-sdnote").textContent = (data.sd_copy ? "The SD card's wpa_supplicant.conf is updated too. " : "") + (data.ap_mode ? "Access point mode: the list is saved now and used once the camera leaves it (hold the button 5 s again, or reboot)." : "");
     if (data.note) setMsg(data.note, true);
     $("wifi-scan").disabled = !!data.ap_mode;
     $("wifi-scan").title = data.ap_mode ? "No scan while the camera is an access point" : "";
@@ -102,7 +102,7 @@
     try {
       const r = await api("/api/wifi/networks", { networks: edit.map((n) => ({ ssid: n.ssid, priority: n.priority, open: !!n.open, psk: n.psk || undefined })) });
       saving = false;
-      setMsg(r.applied ? "Saved. The camera reloaded its network list." : "Saved. The camera is an access point now; it joins these networks after the reboot (Camera tab, bottom).");
+      setMsg(r.applied ? "Saved. The camera reloaded its network list." : "Saved. The camera is an access point now; it joins these networks when you hold its button 5 s again, or after a reboot (Camera tab, bottom).");
       await load();
     } catch (err) { saving = false; setMsg(err.message, true); render(); }
   });
