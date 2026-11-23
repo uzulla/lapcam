@@ -198,7 +198,8 @@ uhttpd (Thingino の UI) がそのまま動く。`rm /etc/init.d/S97lapcam` の�
 
 **工場出荷状態に戻す (本体ボタン 20 秒) は、Thingino の UI に戻す手順ではない**。手で入れた個体では overlay ごと `S97lapcam` が消えて
 Thingino の UI に戻るが、lapcam のファームウェアの個体では rootfs の `S97lapcam` が残り、カードに `lapcam` があるかぎり次の起動でも
-lapcam が動く (消えるのはパスワードなどフラッシュ側の設定だけ: [sdcard.md](sdcard.md#データ領域が消えた時))。
+lapcam が動く (消えるのはパスワードなどフラッシュ側の設定だけ: [sdcard.md](sdcard.md#データ領域が消えた時))。v2.3.0 より後のファームウェアには、そもそも戻る先の Thingino の UI が無い。
 
 旧 Thingino UI 向けに作った自前ページ (`device/www/` の YouTube Live と OSD Settings、Rec ボタンの agent adapter) は
-uhttpd が止まっているので使えないが、ファイルとインストーラは残してある (uhttpd を戻せば動く)。
+lapcam が動いている間は uhttpd が止まっているので使えない (lapcam のファームウェアには uhttpd 自体が無い)。ファイルとインストーラは残してあり、
+素の Thingino に手で入れた個体で uhttpd を戻せば動く。
