@@ -56,11 +56,31 @@ agent adapter の引数順) に、イメージ用の 1 本 (`patches/thingino-wi
 agent adapter については注意: Thingino のビルドは prudynt 用 adapter を入れた後に thingino-agent の
 「null」adapter で上書きしてしまう (出荷ファームが null だった理由)。そのため rootfs に入れるファイルの側に正しいものを置いている (ビルドの最後に上書きされる)。
 
-**イメージに入らないもの**: フラッシュは 16 MB で、rootfs (squashfs 5696 KB) の空きは約 20 KB、データ領域は 8.5 MB。
+**イメージに入らないもの**: フラッシュは 16 MB で、rootfs (squashfs) は 5240 KB、残りの 8.9 MB がデータ領域。
 Go のプログラム (lapcam 9 MB、osd-feed 9.5 MB、beacon 4 MB) と ffmpeg (2.5 MB) は入らないので
 **SD カードに置く**。起動スクリプトはもとから SD (`/mnt/mmcblk0p1`) を見るし、youtube-relay は
-`/mnt/mmcblk0p1/ffmpeg` を最初に探す。つまり SD カードを抜くと素の Thingino として動く
-(Thingino の Web UI が出る。設定は残る)。
+`/mnt/mmcblk0p1/ffmpeg` を最初に探す。つまり **SD カードを抜くと lapcam としては動かない**: 配信も Web の画面も無く、
+残るのは ssh と RTSP (prudynt)、ボタンでの AP 切り替えだけ (設定は残る。カードを戻せば元どおり)。
+
+### イメージから外したもの
+
+Thingino の部品のうち lapcam が使わないものは、イメージを作る直前に rootfs から削っている (`firmware/prune-rootfs.sh`。
+Buildroot の `BR2_ROOTFS_POST_FAKEROOT_SCRIPT` として動く):
+
+| 外したもの | 中身 |
+|---|---|
+| Thingino の Web UI と uhttpd | `/var/www` の中身、`uhttpd`、`S60uhttpd` |
+| ONVIF | `onvif.cgi`、`onvif_notify_server`、`wsd_simple_server`、起動スクリプト 2 本 |
+| MQTT / Home Assistant / Telegram | `mosquitto_*`、`libmosquitto`、`ha-*`、`telegram-cam-*`、起動スクリプト 2 本 |
+
+rootfs は 5676 KB → 5240 KB (436 KB 減)。rootfs の領域はイメージの大きさに合わせて切られるので、減った分はデータ領域に回る
+(8640 KB → 9088 KB)。外す前は rootfs の空きが約 20 KB しかなく、起動スクリプトを 1 本足すのも危うかった。
+
+- パッケージの選択で外せないのでファイルを削っている: ONVIF は prudynt が、Web UI は Thingino の最上位の設定が必ず選ぶ
+- Web UI の一部に見えて残しているもの: `S48webui-config` (prudynt の API が使う `/etc/thingino-api.key` を作る)、
+  `heartbeat-lib.sh` (`S99heartbeat` が読む)、`S02ssl` (証明書は agent も使う)、`libubox` (`jshn` と `odhcp6c` が使う)。
+  通知送信 (`send2*`) は 11 KB しかなく、`motion` などから参照されているので残した
+- 削る対象が rootfs に無ければビルドを止める (Thingino の土台を移した時に、黙って元に戻ったり別のものが欠けたりしないように)
 
 `BUILD_ID` は `ciao+da40db6` (出荷ファームと同じ値) になるようにしている。`device/common.sh` が
 この値以外の個体を拒むため、ソース木が detached checkout だと `HEAD+da40db6` になって
@@ -105,7 +125,7 @@ firmware/build.sh thingino-firmware            # 初回はフルビルド (4 コ
 ```
 
 成果物は `dist/firmware/thingino-wyze_cam3_t31x_gc2053_atbm6031.bin` と `dist/firmware/BUILD` (BUILD_ID)、
-それと `dist/ffmpeg`。rootfs が 5696 KB に収まらなくなるとビルドが失敗する (空きは約 20 KB しかない)。
+それと `dist/ffmpeg`。
 
 ### 2. カードを作る (PC)
 
@@ -207,6 +227,14 @@ sh firmware/make-sdcard_test.sh          # 偽の dist/ と一時ディレクト
 ```
 
 ## 確認したこと・していないこと
+
+- 2026-11-23: Thingino の Web UI・ONVIF・MQTT / Home Assistant を外したイメージ ([イメージから外したもの](#イメージから外したもの)) を
+  試験機に `sysupgrade -x` で焼いた。領域の境目が動いたイメージ (rootfs 0x590000 → 0x520000、data 0x870000 → 0x8e0000) で起動し、
+  カードから Wi-Fi と SSH 鍵が戻り、prudynt・lapcam (ポート 80)・beacon・osd-feed・YouTube への配信・mDNS (`_lapcam._tcp`)・
+  ボタンの常駐が動いた。待ち受けは 22 / 80 / 554 / 8080 で、443 は無い。`wifi-ap` で AP (100.64.1.1) に切り替えて 15 秒後に戻す往復も
+  通った (AP まで 3 秒、戻りは 7 秒)。イメージの中の実行ファイルは、必要な共有ライブラリが全部そろっていることを `readelf` で照合した。
+  **確かめていない**: 録画 (試験機のカードの FAT が壊れていたので書き込みを避けた)、カード無しでの起動、
+  Wi-Fi 未保存での起動 (起動スクリプトは実機で試したものと同じ中身)、設定を残す更新 (`sysupgrade -B`、`-r`) で領域の境目が動く時の挙動
 
 - 2026-11-10: イメージをビルド (BUILD_ID `ciao+da40db6`、rootfs 5648 KB / 5696 KB、データ領域に overlay 20 ファイル)。
   公式インストーラの SD イメージ (`wyze-cam-3-sd.zip`、2026-08-15 版) を展開し、initramfs の `init` を読んで

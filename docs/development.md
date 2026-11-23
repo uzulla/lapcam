@@ -9,6 +9,7 @@
 firmware/   ファームウェアイメージと SD カードを作る (docs/sdcard.md)
               prepare.sh        Thingino のソース木にパッチと user/<camera>/ (焼き込む設定、rootfs に入れるファイル) を用意する
               build.sh          ビルドホストでイメージを作る -> dist/firmware/、dist/ffmpeg
+              prune-rootfs.sh   イメージから Thingino の Web UI・ONVIF・MQTT / Home Assistant を削る (ビルドの中で動く)
               make-sdcard.sh    PC でカードに一式を書く (fatextract.py は公式インストーラの取り出し)
               sdcard/           カードに置く雛形 (README.txt、OSD の設定、ロゴ)
 device/     カメラに入るもの (一覧は device/README.md)

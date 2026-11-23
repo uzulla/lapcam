@@ -67,7 +67,7 @@ echo 'REC' > /run/prudynt/osd-text2.tmp && mv /run/prudynt/osd-text2.tmp /run/pr
   `prudynt-osd.json` を直接編集する (次の節。`osd-config` が 5 秒以内に反映する)。ファイルに既にあるキーのうち lapcam が
   触らないものは残る
 - 旧 Thingino UI 向けに作った OSD Settings ページ (`device/www/osd-settings.html`、`/x/json-osd-text.cgi`) は
-  uhttpd を使っている個体でだけ動く (lapcam が動いている間 uhttpd は止まる)。入れるのは [手で入れる](#素の-thingino-に手で入れる場合)
+  uhttpd を使っている個体でだけ動く (lapcam が `-listen :80` で動いている間 uhttpd は止まる。lapcam のファームウェアには uhttpd が無い)。入れるのは [手で入れる](#素の-thingino-に手で入れる場合)
   時だけ
 
 ## 画像 (ロゴなど) を重ねる: `osd.imagefile`
