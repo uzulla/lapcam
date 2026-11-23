@@ -70,7 +70,7 @@ youtube-relay: ffmpeg: [out#0/flv @ ...] Error opening output rtmps://.../REDACT
 | SD の `prudynt-osd.json` が反映されない | `logread \| grep osd-config`。`no usable "osd" object` は JSON の構文エラーか `osd` キーが無い。`does not accept` はキーの綴り間違いか、パッチなしの prudynt。何も出ていなければ `service start osd-config` |
 | YouTube Studio に何も出ない (ログは Starting ffmpeg) | ストリームキーの間違いが最有力。YouTube 側は間違ったキーでも接続を受けてから切断するため、`ffmpeg exited` の繰り返しになっていないかログを確認 |
 | 映像は出るが音が出ない | RTSP に複数の音声トラックが載っている可能性。設定の **`ffmpeg_out_opts`** に `-map 0:v:0 -map 0:a:0` を指定して AAC トラックを明示する (`-map` は出力オプションなので `-i` の前に展開される `ffmpeg_opts` に書くと ffmpeg が起動エラーになる) |
-| lapcam が開けない (ポート 80 が答えない。素の Thingino に手で入れた個体では Thingino の UI が出る) | SD が無い・マウントされていないと lapcam は起動しない。カードの `lapcam` と `lapcam.args` を確認 ([lapcam.md](lapcam.md))。版の不一致 (Camera タブ下部が赤) はカードかファームウェアを更新する ([release.md](release.md)) |
+| lapcam が開けない (ポート 80 が答えない。素の Thingino に手で入れた個体では Thingino の UI が出る) | SD が無い・マウントされていないと lapcam は起動しない。カードの `lapcam` と `lapcam.args` を確認 ([lapcam.md](lapcam.md))。手で入れた個体で `-listen :80` の lapcam が起動に失敗した・途中で落ちた時は、uhttpd も止まったままでポート 80 に何も出ない: `logread \| grep lapcam` で理由を見て、`/etc/init.d/S97lapcam restart`、Thingino の UI を出すなら `/etc/init.d/S60uhttpd start`。版の不一致 (Camera タブ下部が赤) はカードかファームウェアを更新する ([release.md](release.md)) |
 
 ## ffmpeg のエラーを直接見る
 

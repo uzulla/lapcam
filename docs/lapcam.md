@@ -201,5 +201,6 @@ Thingino の UI に戻るが、lapcam のファームウェアの個体では ro
 lapcam が動く (消えるのはパスワードなどフラッシュ側の設定だけ: [sdcard.md](sdcard.md#データ領域が消えた時))。v2.3.0 より後のファームウェアには、そもそも戻る先の Thingino の UI が無い。
 
 旧 Thingino UI 向けに作った自前ページ (`device/www/` の YouTube Live と OSD Settings、Rec ボタンの agent adapter) は
-lapcam が動いている間は uhttpd が止まっているので使えない (lapcam のファームウェアには uhttpd 自体が無い)。ファイルとインストーラは残してあり、
+lapcam が `-listen :80` で動いている間は uhttpd が止まっているので使えない (`-listen :8000` など別のポートなら uhttpd は止まらず、並べて使える。
+lapcam のファームウェアには uhttpd 自体が無い)。ファイルとインストーラは残してあり、
 素の Thingino に手で入れた個体で uhttpd を戻せば動く。
