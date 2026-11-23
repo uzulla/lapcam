@@ -8,8 +8,11 @@
 # With "-listen :80" this script stops Thingino's web server uhttpd (S60uhttpd,
 # ports 80/443) right before starting the app, and starts uhttpd again when the
 # app is stopped. uhttpd itself stays enabled: a camera without the SD card or
-# the binary keeps Thingino's UI instead of having none.
-# Runs in portal / access point mode too: it is the only UI then.
+# the binary keeps Thingino's UI instead of having none. That is a plain
+# Thingino with these files installed by hand: the lapcam firmware image has no
+# uhttpd (firmware/prune-rootfs.sh), so there is nothing to stop or to fall
+# back to, and without the card the camera has no web page.
+# Runs in access point mode too.
 # Install to /etc/init.d/S97lapcam (chmod +x). service enable/disable lapcam.
 
 DAEMON="lapcam"

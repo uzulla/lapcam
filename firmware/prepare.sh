@@ -50,8 +50,12 @@
 #     rootfs/ and overlay/ are wiped and rootfs/ regenerated. The other files
 #     are overwritten; a local.mk or opt/ of your own in user/<camera>/ is left alone.
 #
-# Not in the image (the flash is 16 MB: the rootfs has about 20 KB to spare,
-# the data partition 8 MB): the Go programs (lapcam 9 MB, osd-feed 9.5 MB,
+# Taken out of the image: Thingino's web UI with uhttpd, ONVIF, MQTT / Home
+# Assistant (prune-rootfs.sh, which this script puts into user/<camera>/ and
+# names as BR2_ROOTFS_POST_FAKEROOT_SCRIPT; it tells why and what stays).
+#
+# Not in the image (the flash is 16 MB: rootfs 5.2 MB, the data partition
+# 8.9 MB): the Go programs (lapcam 9 MB, osd-feed 9.5 MB,
 # beacon 4 MB) and ffmpeg (2.5 MB) stay on the SD card, where the init scripts
 # look for them anyway (firmware/make-sdcard.sh puts them there).
 #
@@ -204,7 +208,11 @@ cat >"$U/local.fragment" <<EOF
 BR2_PACKAGE_PRUDYNT_T_OSD_FONT_8X8=y
 # lapcam's files go into the rootfs (see prepare.sh for why not the data partition)
 BR2_ROOTFS_OVERLAY="\$(BR2_EXTERNAL_THINGINO_PATH)/overlay \$(BR2_EXTERNAL_THINGINO_PATH)/user/$CAMERA/rootfs"
+# Thingino's web UI, ONVIF, MQTT / Home Assistant are taken out of the image (firmware/prune-rootfs.sh)
+BR2_ROOTFS_POST_FAKEROOT_SCRIPT="\$(BR2_EXTERNAL_THINGINO_PATH)/user/$CAMERA/prune-rootfs.sh"
 EOF
+cp "$HERE/prune-rootfs.sh" "$U/prune-rootfs.sh"
+chmod 755 "$U/prune-rootfs.sh"
 
 # prudynt.json is merged into /etc/prudynt.json when the prudynt-t package is
 # installed, so a change here needs that package rebuilt (thingino.json is

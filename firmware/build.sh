@@ -153,6 +153,12 @@ if ! printf '%s\n' "$listing" | grep -q '/etc/lapcam-release$'; then
 	echo "rootfs.squashfs has no /etc/lapcam-release: lapcam's files did not get into the rootfs (BR2_ROOTFS_OVERLAY in user/$CAMERA/local.fragment?)" >&2
 	exit 1
 fi
+# and what firmware/prune-rootfs.sh takes out must not be in it (the script
+# did not run: BR2_ROOTFS_POST_FAKEROOT_SCRIPT of local.fragment was dropped?)
+if printf '%s\n' "$listing" | grep -q -e '/usr/bin/uhttpd$' -e '/var/www/onvif' -e '/usr/bin/mosquitto_pub$'; then
+	echo "rootfs.squashfs still has Thingino's web UI / ONVIF / MQTT: firmware/prune-rootfs.sh did not run on it" >&2
+	exit 1
+fi
 if [ -f "$FFMPEG" ]; then
 	cp "$FFMPEG" "$REPO/dist/ffmpeg"
 	# ffmpeg carries no version string of its own: the firmware's goes next to it

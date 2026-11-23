@@ -49,7 +49,7 @@ dist/ffmpeg, dist/ffmpeg.version                            カードに置く f
   (Buildroot はパッケージディレクトリの変更を見ない)
 - `PACK_ONLY=1` (イメージの組み直しだけ) は無くした。lapcam のファイルが rootfs に入ったので、device/ を変えた後も
   差分ビルドが要る (付けて実行するとその旨を出して止まる)
-- rootfs (squashfs 5696 KB) の空きは約 20 KB (lapcam のファイルを rootfs に入れる前は約 50 KB)。入らなくなるとビルドが失敗する。大きいものは SD カードへ ([sdcard.md](sdcard.md))
+- rootfs (squashfs) は 5240 KB。Thingino の Web UI・ONVIF・MQTT / Home Assistant を削ってある ([sdcard.md](sdcard.md#イメージから外したもの)。削る前は 5676 KB で、領域 5696 KB に対して空きが約 20 KB しかなかった)。大きいものは SD カードへ
 - 他機種は `firmware/build.sh thingino-firmware <機種名>` (未検証)
 
 ## 3. (任意) 実機に入れる前に ffmpeg を QEMU で確かめる
