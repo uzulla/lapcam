@@ -374,13 +374,15 @@
   }
   document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
 
-  async function loadProfiles() {
+  // keepMsg: called right after a save, whose result ("Saved…") must stay on
+  // the screen; only a warning about the file replaces it
+  async function loadProfiles(keepMsg) {
     try {
       profiles = await api("/api/relay/config");
       if (!Array.isArray(profiles.profiles)) profiles.profiles = [];
       renderProfiles();
       $("btn-autostart").classList.toggle("on", !!profiles.autostart);
-      setMsg("profiles-msg", profiles.warning || "", !!profiles.warning);
+      if (!keepMsg || profiles.warning) setMsg("profiles-msg", profiles.warning || "", !!profiles.warning);
     } catch (err) {
       setMsg("profiles-msg", err.message, true);
     }
@@ -425,7 +427,7 @@
     try {
       const r = await api("/api/relay/config", { profiles: profiles.profiles, active: profiles.active });
       setMsg("profiles-msg", r.error ? r.error : r.restarted ? "Saved. The stream restarts with the new key." : r.changed ? "Saved." : "Saved (nothing changed for the stream).", !!r.error);
-      await loadProfiles();
+      await loadProfiles(true);
       refresh();
     } catch (err) {
       setMsg("profiles-msg", err.message, true);

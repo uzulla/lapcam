@@ -113,7 +113,7 @@ relay が自分で追従するので不要。OFF は watcher が 15 秒以内に
   (「Network down」のログが 1 回出る)。全ての起動試行は「Starting ffmpeg」としてログに残る。
   `thingino-ha` パッケージの watchdog と同じ構造
 - 起動前に**デフォルトルートができるまで待ち** (ICMP を落とすルーターで詰まらないよう
-  ping は意図的にしない)、NTP 同期フラグ (`/run/sync_success`) を最大 60 秒待つ
+  ping は意図的にしない)、NTP 同期フラグ (`/run/sync_success`) を、カメラの起動から 90 秒たつまで待つ (起動後しばらくしてからの開始・再起動では待たない)
 - `start-stop-daemon -N 10` で低優先度起動 — prudynt / ISP 処理と CPU を取り合わない
   (`telegrambot` と同じ流儀)
 - ストリームキーが未設定でも supervisor は常駐し、設定が現れるまで**配信せず待機** (無害)
