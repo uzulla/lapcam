@@ -115,19 +115,32 @@ trap cleanup TERM INT
 
 log "Started, watching for config: $CONFIG_CANDIDATES"
 
-# Wait for network once, then give NTP time to sync (nice-to-have for TLS):
-# until its flag appears, or the camera has been up for 90s. The limit is on
-# the uptime, not on this wait: the flag is made by the ntpd daemon's first
-# step, and comes minutes late on a boot where the one-shot "ntpd -q" of
-# S49ntpd set the clock before it (seen: still missing 3 minutes after the
-# clock was right). A start in that time (Go live, a stream key saved in
-# lapcam) waited a whole minute before streaming.
+# The clock is right: ntpd's flag is there, or the clock is well past where
+# Thingino puts it at boot (F01datetime: the firmware's build time, counting
+# up from there). The flag alone is not enough: it is made by the ntpd
+# daemon's first step, and comes minutes late on a boot where the one-shot
+# "ntpd -q" of S49ntpd set the clock before it (seen: still missing 3 minutes
+# after the clock was right).
+clock_set() {
+	[ -f /run/sync_success ] && return 0
+	built=$(awk -F= '/^BUILD_TIMESTAMP=/{print $2}' /etc/os-release 2>/dev/null)
+	case "$built" in "" | *[!0-9]*) return 1 ;; esac
+	[ $(($(date +%s) - built - $(cut -d. -f1 /proc/uptime))) -gt 120 ]
+}
+
+# Wait for network once, then for the clock, until the camera has been up for
+# 90s at most. Not for TLS (ffmpeg does not check the certificate's dates):
+# a stream that is running when the clock jumps is cut once, because prudynt
+# sees its RTSP session as idle for days. The limit is on the uptime, not on
+# this wait, and a clock that is right is not waited for: a start later on
+# (Go live, a stream key saved in lapcam) begins at once. It used to wait a
+# whole minute whenever the flag was late.
 network_ready || log "Waiting for network"
 until network_ready; do
 	sleep 5
 done
-while [ ! -f /run/sync_success ] && [ "$(cut -d. -f1 /proc/uptime)" -lt 90 ]; do
-	sleep 5
+while ! clock_set && [ "$(cut -d. -f1 /proc/uptime)" -lt 90 ]; do
+	sleep 1
 done
 
 BACKOFF=2
