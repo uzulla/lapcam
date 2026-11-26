@@ -142,6 +142,7 @@ apply_diff "$REPO/patches/thingino-ffmpeg-rtmps.diff" thingino-ffmpeg
 put_patch "$REPO/patches/thingino-ffmpeg-rtmp-chunk-size.diff" package/thingino-ffmpeg/0002-rtmp-chunk-size.patch thingino-ffmpeg
 put_patch "$REPO/patches/prudynt-osd-textfile.diff" package/prudynt-t/0001-osd-textfile.patch prudynt-t
 put_patch "$REPO/patches/prudynt-msgchannel-warning.diff" package/prudynt-t/0002-msgchannel-warning.patch prudynt-t
+put_patch "$REPO/patches/prudynt-stream-clients.diff" package/prudynt-t/0003-stream-clients.patch prudynt-t
 apply_diff "$REPO/patches/thingino-agent-adapter-record-args.diff" prudynt-t
 # a camera without a saved Wi-Fi starts as the access point of wifi-ap (open,
 # named like the camera, 100.64.1.1) instead of Thingino's setup portal: the
