@@ -72,6 +72,7 @@ git apply ../patches/thingino-ffmpeg-rtmps.diff
 cp ../patches/thingino-ffmpeg-rtmp-chunk-size.diff package/thingino-ffmpeg/0002-rtmp-chunk-size.patch
 cp ../patches/prudynt-osd-textfile.diff        package/prudynt-t/0001-osd-textfile.patch
 cp ../patches/prudynt-msgchannel-warning.diff  package/prudynt-t/0002-msgchannel-warning.patch
+cp ../patches/prudynt-stream-clients.diff      package/prudynt-t/0003-stream-clients.patch
 mkdir -p user/wyze_cam3_t31x_gc2053_atbm6031
 echo 'BR2_PACKAGE_PRUDYNT_T_OSD_FONT_8X8=y' >> user/wyze_cam3_t31x_gc2053_atbm6031/local.fragment   # フル ASCII の 8x8 フォント
 

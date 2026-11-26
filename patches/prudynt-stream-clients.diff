@@ -1,0 +1,155 @@
+diff --git a/src/network/HTTPMJPEG.cpp b/src/network/HTTPMJPEG.cpp
+--- a/src/network/HTTPMJPEG.cpp
++++ b/src/network/HTTPMJPEG.cpp
+@@ -283,28 +283,42 @@
+     // instead of replaying stale frames.
+     if (prev == 0 && vs->msgChannel)
+       vs->msgChannel->clear();
++    vs->http_clients.fetch_add(1);
+     vs->hasDataCallback.store(true, std::memory_order_relaxed);
+     vs->should_grab_frames.notify_one();
+   }
+ 
+   if (with_audio && global_audio[0]) {
++    global_audio[0]->http_clients.fetch_add(1);
+     global_audio[0]->hasDataCallback.store(true, std::memory_order_relaxed);
+     global_audio[0]->should_grab_frames.notify_one();
+   }
+ }
+ 
+-void release_stream_client(int vch, bool with_audio) {
+-  int prev = g_stream_clients.fetch_sub(1);
+-  if (prev > 1)
+-    return; // other clients still attached
++// Last HTTP client of a stream out: stop its worker so it idles instead of
++// producing into queues that nothing consumes - unless an RTSP session still
++// plays it.  The check after the store covers an RTSP PLAY that came in
++// between (it counts itself before it sets hasDataCallback).
++template <typename Stream> static void release_http_client(Stream &st) {
++  if (st.http_clients.fetch_sub(1) > 1)
++    return; // other HTTP clients still attached
++  st.http_clients.store(0);
++  if (st.rtsp_players.load() > 0)
++    return; // an RTSP session still needs the frames
++  st.hasDataCallback.store(false, std::memory_order_relaxed);
++  if (st.rtsp_players.load() > 0) {
++    st.hasDataCallback.store(true, std::memory_order_relaxed);
++    st.should_grab_frames.notify_one();
++  }
++}
+ 
+-  // Last client out: stop the workers so they idle instead of producing into
+-  // queues that nothing consumes.
+-  g_stream_clients.store(0);
++void release_stream_client(int vch, bool with_audio) {
++  if (g_stream_clients.fetch_sub(1) <= 1)
++    g_stream_clients.store(0);
+   if (vch >= 0 && vch < NUM_VIDEO_CHANNELS && global_video[vch])
+-    global_video[vch]->hasDataCallback.store(false, std::memory_order_relaxed);
++    release_http_client(*global_video[vch]);
+   if (with_audio && global_audio[0])
+-    global_audio[0]->hasDataCallback.store(false, std::memory_order_relaxed);
++    release_http_client(*global_audio[0]);
+ }
+ 
+ // Stream an already-encoded H.264 channel as live fragmented MP4 (fMP4) over
+diff --git a/src/network/rtsp/RtspServer.cpp b/src/network/rtsp/RtspServer.cpp
+--- a/src/network/rtsp/RtspServer.cpp
++++ b/src/network/rtsp/RtspServer.cpp
+@@ -663,6 +663,22 @@
+ 
+ // -- Close ------------------------------------------------------------------
+ 
++// Publish this server's player count of a stream (see globals.hpp:
++// rtsp_players).  At zero the worker is stopped, unless an HTTP fMP4 client
++// (/chN.mp4) still reads the stream; the check after the store covers a
++// client that attached in between (it counts itself before it sets
++// hasDataCallback).
++template <typename Stream>
++static void rtspPlayersChanged(Stream &st, int players) {
++    st.rtsp_players.store(players);
++    if (players > 0 || st.http_clients.load() > 0) return;
++    st.hasDataCallback.store(false, std::memory_order_relaxed);
++    if (st.http_clients.load() > 0) {
++        st.hasDataCallback.store(true, std::memory_order_relaxed);
++        st.should_grab_frames.notify_one();
++    }
++}
++
+ void RtspServer::closeClient(int idx) {
+     if (idx < 0 || idx >= static_cast<int>(sessions_.size())) return;
+     auto &s = sessions_[idx];
+@@ -677,21 +693,20 @@
+             activePlayers_[s->videoChn]--;
+             if (activePlayers_[s->videoChn] <= 0) {
+                 activePlayers_[s->videoChn] = 0;
+-                if (global_video[s->videoChn]) {
+-                    global_video[s->videoChn]->hasDataCallback.store(
+-                        false, std::memory_order_relaxed);
+-                }
+             }
++            if (global_video[s->videoChn]) {
++                rtspPlayersChanged(*global_video[s->videoChn],
++                                   activePlayers_[s->videoChn]);
++            }
+         }
+         if (s->hasAudio) {
+             activeAudioPlayers_--;
+             if (activeAudioPlayers_ <= 0) {
+                 activeAudioPlayers_ = 0;
+-                if (global_audio[0]) {
+-                    global_audio[0]->hasDataCallback.store(
+-                        false, std::memory_order_relaxed);
+-                }
+             }
++            if (global_audio[0]) {
++                rtspPlayersChanged(*global_audio[0], activeAudioPlayers_);
++            }
+         }
+     }
+ 
+@@ -1633,6 +1648,9 @@
+ 
+         // Ensure video frames flow --- set hasDataCallback
+         if (s->videoChn < NUM_VIDEO_CHANNELS && global_video[s->videoChn]) {
++            // counted before hasDataCallback is set: see rtspPlayersChanged()
++            global_video[s->videoChn]->rtsp_players.store(
++                activePlayers_[s->videoChn] + 1);
+             global_video[s->videoChn]->hasDataCallback.store(
+                 true, std::memory_order_relaxed);
+             global_video[s->videoChn]->should_grab_frames.notify_one();
+@@ -1665,6 +1683,7 @@
+             []() {})
+             .id;
+ 
++        global_audio[0]->rtsp_players.store(activeAudioPlayers_ + 1);
+         global_audio[0]->hasDataCallback.store(
+             true, std::memory_order_relaxed);
+         global_audio[0]->should_grab_frames.notify_one();
+diff --git a/src/stream/globals.hpp b/src/stream/globals.hpp
+--- a/src/stream/globals.hpp
++++ b/src/stream/globals.hpp
+@@ -170,6 +170,14 @@
+    * is registered right now.
+    */
+   std::atomic<bool> hasDataCallback;
++  /* hasDataCallback has two kinds of owners: the RTSP server (its playing
++   * sessions) and the HTTP fMP4 clients (/chN.mp4). Each counts its own here
++   * and clears hasDataCallback only when the other count is zero too:
++   * otherwise a browser closing its MP4 preview starved a playing RTSP
++   * session (and the other way round).
++   */
++  std::atomic<int> rtsp_players{0};
++  std::atomic<int> http_clients{0};
+   std::mutex onDataCallbackLock; // protects onDataCallback from deallocation
+   std::condition_variable should_grab_frames;
+   binary_semaphore_compat is_activated{0};
+@@ -202,6 +210,8 @@
+   bool encoder_paused = false; // encoder idled while no subscribers
+   std::atomic<bool> bootstrap_requested{false};
+   std::atomic<bool> hasDataCallback; // see comment in audio_stream
++  std::atomic<int> rtsp_players{0};  // see comment in audio_stream
++  std::atomic<int> http_clients{0};
+   std::atomic<bool> mp4_waiting_for_idr;
+   std::atomic<int64_t> mp4_required_idr_ts_us;
+   std::atomic<int64_t> mp4_last_idr_ts_us;

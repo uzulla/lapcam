@@ -734,6 +734,39 @@ FFmpeg は publish 中にサーバから Set Chunk Size を受けると、それ
   は通す) のが筋だが、prudynt の再ビルドと差し替え (配信が数秒止まる) が要る。録画の用途なら、
   `tools/concat-recordings.sh` が音声基準で並べ直すので実害は小さい
 
+## 2026-11 追記: プレビューを閉じると配信が止まる (prudynt パッチ)
+
+lapcam の MP4 プレビュー (`/api/preview.mp4` → prudynt の `:8080/ch0.mp4`) を閉じるたびに、YouTube への配信が
+65〜100 秒止まっていた。Camera タブから Stream など別のタブへ移る、ブラウザを閉じる、がすべて当てはまる。
+
+### 事実 (2026-11-26、実機 v2.3.0-14-g280d233)
+
+- プレビューを閉じた直後から wlan0 の送信が 1.1 Mbps → 数 kbps になる。ffmpeg は生きたまま、RTSP の接続も
+  ESTABLISHED のまま (キューは両側 0)、YouTube 側の接続だけが `CLOSE_WAIT` (YouTube が先に閉じた)
+- 65 秒後に prudynt が `Closing client session ... playing=1` を出し、ffmpeg が `Error writing trailer: End of file`
+  (`rc=187`) で終わって 2 秒後に再接続する。Wi-Fi (RSSI -38) もメモリも関係ない
+- カメラの中で `curl -m 4 -o /dev/null http://127.0.0.1:8080/ch0.mp4` を 1 回打つだけで必ず再現する
+
+### 仕組み (prudynt のソースで確認)
+
+- 映像ワーカーは `hasDataCallback` が立っている間だけタップ (RTSP のセッション、fMP4 のクライアント) へフレームを配る
+- この旗を RTSP サーバ (`activePlayers_`) と HTTP の fMP4 (`g_stream_clients`) が別々に数えていて、どちらも
+  「自分の数が 0 になったら旗を下ろす」。fMP4 の最後のクライアントが抜けると、RTSP で再生中でも旗が下りる
+  (`HTTPMJPEG.cpp` の `release_stream_client`)。逆 (RTSP が抜けると fMP4 が止まる) も同じ
+- ffmpeg の RTSP の keepalive (`GET_PARAMETER`) はパケットを読む合間にしか出ない。映像も音声も来ないと出せず、
+  prudynt が 65 秒の無通信 (`checkSessionTimeouts`) でセッションを閉じて、ようやく ffmpeg が EOF で終わる
+- ffmpeg の `-timeout` (RTSP のソケットの無通信タイムアウト) では検知できない: 止まっている間も RTCP が数秒おきに
+  流れる (10 秒にして試したが、終わるのは同じく 65 秒後だった)
+
+### 対処 `patches/prudynt-stream-clients.diff`
+
+`video_stream` / `audio_stream` に `rtsp_players` と `http_clients` を持たせ、どちらの側も相手の数が 0 の時だけ
+`hasDataCallback` を下ろす。`package/prudynt-t/0003-stream-clients.patch` として Buildroot に当てる (prepare.sh)。
+
+確認 (2026-11-26、実機): 配信中に ch0 の fMP4 を 3 回開閉、2 本を重ねて開閉、ch1 の fMP4 を開閉しても、ffmpeg の
+pid は変わらず送信も 1.1 Mbps のまま。ch1 は閉じた後に `encoder paused (idle)` へ戻る (誰も見ていない時に止まる
+動きは残っている)。逆向き (プレビュー中に RTSP が抜ける) は未確認。
+
 ## 残タスク
 
 - [x] 長時間試験 — **約4時間の連続配信で完走、リーク・劣化なし**

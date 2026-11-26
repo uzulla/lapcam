@@ -24,6 +24,7 @@ patches/    Thingino / FFmpeg / prudynt に当てる差分 (prepare.sh が当て
               thingino-ffmpeg-rtmp-chunk-size.diff   RTMP の送信チャンクを 128 から 4096 バイトへ (送信量 1.7 倍 -> 1.08 倍)
               prudynt-osd-textfile.diff              prudynt にテキスト 3 枠と画像 1 枠の OSD を足す
               prudynt-msgchannel-warning.diff        5 秒ごとの誤報 (msgChannel sink clogged) を止める
+              prudynt-stream-clients.diff            MP4 プレビューを閉じると RTSP (YouTube への配信) の映像が止まるのを直す
               thingino-agent-adapter-record-args.diff  agent の prudynt 用 adapter で record の引数順を直す
               thingino-wifi-portal-ssid.diff         Wi-Fi 未保存の時、設定用ポータルではなく wifi-ap と同じ AP で起動する
 tools/      PC で使う道具
